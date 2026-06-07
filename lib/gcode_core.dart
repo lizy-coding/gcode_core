@@ -14,3 +14,6 @@ export 'src/models/toolpath_segment.dart';
 export 'src/parser/gcode_parse_result.dart';
 export 'src/parser/gcode_parser.dart';
 export 'src/services/toolpath_builder.dart';
+export 'src/widgets/command_timeline.dart';
+export 'src/widgets/gcode_canvas.dart';
+export 'src/widgets/playback_controls.dart';

@@ -44,7 +44,7 @@ G2 X40 Y40
 ''';
 
   final _pipeline = GcodeReadlinePipeline(
-    options: const GcodeReadlineOptions(snapshotBatchSize: 100),
+    options: const GcodeReadlineOptions(snapshotBatchSize: 1),
   );
 
   GcodeLoadSnapshot? _snapshot;
@@ -88,6 +88,9 @@ G2 X40 Y40
         _snapshot = snapshot;
         _status = snapshot.message;
       });
+      if (snapshot.stage == GcodeLoadStage.parsing) {
+        await Future<void>.delayed(const Duration(milliseconds: 16));
+      }
     }
 
     if (!mounted) return;
@@ -133,7 +136,10 @@ G2 X40 Y40
                 children: [
                   Expanded(
                     flex: 3,
-                    child: _ToolpathCanvas(segments: snapshot?.segments ?? []),
+                    child: _ToolpathCanvas(
+                      segments: snapshot?.segments ?? [],
+                      parsing: _loading,
+                    ),
                   ),
                   const SizedBox(width: 16),
                   SizedBox(width: 360, child: _ResultPanel(snapshot: snapshot)),
@@ -289,9 +295,10 @@ class _Metric extends StatelessWidget {
 }
 
 class _ToolpathCanvas extends StatelessWidget {
-  const _ToolpathCanvas({required this.segments});
+  const _ToolpathCanvas({required this.segments, required this.parsing});
 
   final List<ToolpathSegment> segments;
+  final bool parsing;
 
   @override
   Widget build(BuildContext context) {
@@ -305,9 +312,68 @@ class _ToolpathCanvas extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: CustomPaint(
-          painter: _ToolpathPainter(segments),
-          child: Center(child: segments.isEmpty ? const Text('暂无轨迹') : null),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _ToolpathPainter(segments),
+                child: Center(
+                  child: segments.isEmpty ? const Text('暂无轨迹') : null,
+                ),
+              ),
+            ),
+            Positioned(
+              left: 12,
+              top: 12,
+              child: _CanvasLegend(
+                parsing: parsing,
+                segments: segments.length,
+                mainSegments: segments
+                    .where((segment) => segment.type == GcodeSegmentType.linear)
+                    .length,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CanvasLegend extends StatelessWidget {
+  const _CanvasLegend({
+    required this.parsing,
+    required this.segments,
+    required this.mainSegments,
+  });
+
+  final bool parsing;
+  final int segments;
+  final int mainSegments;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.9),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: DefaultTextStyle(
+          style: theme.textTheme.labelMedium!,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(parsing ? '动态解析绘制中' : 'Canvas 轨迹绘制'),
+              const SizedBox(height: 4),
+              Text('主线段 G1: $mainSegments'),
+              Text('移动段 G0/G1: $segments'),
+            ],
+          ),
         ),
       ),
     );
@@ -355,12 +421,50 @@ class _ToolpathPainter extends CustomPainter {
       ..color = const Color(0xff2563eb)
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
+    final startPaint = Paint()..color = const Color(0xff16a34a);
+    final endPaint = Paint()..color = const Color(0xffdc2626);
+
+    final mainPath = Path();
+    var hasMainPath = false;
 
     for (final segment in segments) {
-      final paint = segment.type == GcodeSegmentType.rapid
-          ? rapidPaint
-          : linearPaint;
-      canvas.drawLine(mapPoint(segment.start), mapPoint(segment.end), paint);
+      final start = mapPoint(segment.start);
+      final end = mapPoint(segment.end);
+
+      if (segment.type == GcodeSegmentType.rapid) {
+        _drawDashedLine(canvas, start, end, rapidPaint);
+      } else {
+        mainPath.moveTo(start.dx, start.dy);
+        mainPath.lineTo(end.dx, end.dy);
+        hasMainPath = true;
+      }
+    }
+
+    if (hasMainPath) {
+      canvas.drawPath(mainPath, linearPaint);
+    }
+
+    canvas.drawCircle(mapPoint(segments.first.start), 4, startPaint);
+    canvas.drawCircle(mapPoint(segments.last.end), 4, endPaint);
+  }
+
+  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
+    const dash = 8.0;
+    const gap = 6.0;
+    final delta = end - start;
+    final distance = delta.distance;
+    if (distance == 0) return;
+
+    final direction = delta / distance;
+    var drawn = 0.0;
+    while (drawn < distance) {
+      final next = math.min(drawn + dash, distance);
+      canvas.drawLine(
+        start + direction * drawn,
+        start + direction * next,
+        paint,
+      );
+      drawn = next + gap;
     }
   }
 

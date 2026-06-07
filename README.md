@@ -1,6 +1,6 @@
 # gcode_core
 
-Pure Dart G-code core extracted from `flutter_study`.
+G-code parsing and visualization package extracted from `flutter_study`.
 
 ## Scope
 
@@ -8,13 +8,15 @@ Pure Dart G-code core extracted from `flutter_study`.
 - Parse G0/G1 commands with X/Y/F parameters.
 - Collect parse errors with line metadata.
 - Build incremental or batch toolpath segments.
+- Render toolpaths with Flutter `CustomPaint`.
+- Render command timelines and playback controls for Flutter frontends.
 
-This package contains no Flutter UI, animation, canvas drawing, or file picker code.
+This package does not open system file pickers or own app-level playback state.
 
 ## Test
 
 ```bash
-dart test
+flutter test
 ```
 
 ## Example
