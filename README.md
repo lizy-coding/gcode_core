@@ -21,7 +21,17 @@ flutter test
 
 ## Example
 
-Run the executable example:
+Run the Flutter example app:
+
+```bash
+cd example
+flutter run
+```
+
+The example demonstrates local file selection, streaming parse snapshots,
+`GcodeCanvas` drawing, `CommandTimeline`, and `PlaybackControls`.
+
+Run the console example:
 
 ```bash
 dart run example/gcode_core_example.dart

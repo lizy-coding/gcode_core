@@ -150,16 +150,17 @@ class _ToolpathPainter extends CustomPainter {
 
       final paint = Paint()
         ..color = seg.type == GcodeSegmentType.rapid
-            ? Colors.blue.withValues(alpha: 0.15)
+            ? Colors.red.withValues(alpha: 0.25)
             : Colors.green.withValues(alpha: 0.15)
         ..strokeWidth = 1
         ..style = PaintingStyle.stroke;
 
       if (seg.type == GcodeSegmentType.rapid) {
-        paint.strokeWidth = 0.5;
+        paint.strokeWidth = 1;
+        _drawDashedLine(canvas, Offset(sx, sy), Offset(ex, ey), paint);
+      } else {
+        canvas.drawLine(Offset(sx, sy), Offset(ex, ey), paint);
       }
-
-      canvas.drawLine(Offset(sx, sy), Offset(ex, ey), paint);
     }
   }
 
@@ -195,17 +196,37 @@ class _ToolpathPainter extends CustomPainter {
       final ey = offsetY + (bounds.maxY - endY - bounds.minY) * scale;
 
       final paint = Paint()
-        ..color =
-            seg.type == GcodeSegmentType.rapid ? Colors.blue : Colors.green
+        ..color = seg.type == GcodeSegmentType.rapid ? Colors.red : Colors.green
         ..strokeWidth = seg.type == GcodeSegmentType.rapid ? 1.5 : 2.5
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round;
 
       if (seg.type == GcodeSegmentType.rapid) {
         paint.strokeWidth = 1.5;
+        _drawDashedLine(canvas, Offset(sx, sy), Offset(ex, ey), paint);
+      } else {
+        canvas.drawLine(Offset(sx, sy), Offset(ex, ey), paint);
       }
+    }
+  }
 
-      canvas.drawLine(Offset(sx, sy), Offset(ex, ey), paint);
+  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
+    const dashLength = 7.0;
+    const gapLength = 5.0;
+    final delta = end - start;
+    final distance = delta.distance;
+    if (distance == 0) return;
+
+    final direction = delta / distance;
+    var current = 0.0;
+    while (current < distance) {
+      final next = min(current + dashLength, distance);
+      canvas.drawLine(
+        start + direction * current,
+        start + direction * next,
+        paint,
+      );
+      current = next + gapLength;
     }
   }
 

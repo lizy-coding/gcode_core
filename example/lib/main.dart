@@ -1,4 +1,4 @@
-import 'dart:math' as math;
+import 'dart:async';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -51,6 +51,16 @@ G2 X40 Y40
   String _sourceName = '未选择文件';
   String _status = '请选择本地 G-code 文件，或加载内置示例。';
   bool _loading = false;
+  bool _isPlaying = false;
+  double _playbackProgress = 1;
+  double _speedMultiplier = 1;
+  Timer? _playbackTimer;
+
+  @override
+  void dispose() {
+    _playbackTimer?.cancel();
+    super.dispose();
+  }
 
   Future<void> _pickAndParseFile() async {
     const typeGroup = XTypeGroup(
@@ -75,8 +85,11 @@ G2 X40 Y40
     GcodeLineReader reader, {
     required String sourceName,
   }) async {
+    _playbackTimer?.cancel();
     setState(() {
       _loading = true;
+      _isPlaying = false;
+      _playbackProgress = 1;
       _sourceName = sourceName;
       _snapshot = null;
       _status = '正在读取 $sourceName';
@@ -87,6 +100,7 @@ G2 X40 Y40
       setState(() {
         _snapshot = snapshot;
         _status = snapshot.message;
+        _playbackProgress = 1;
       });
       if (snapshot.stage == GcodeLoadStage.parsing) {
         await Future<void>.delayed(const Duration(milliseconds: 16));
@@ -97,13 +111,58 @@ G2 X40 Y40
     setState(() => _loading = false);
   }
 
+  void _play() {
+    if ((_snapshot?.segments.isEmpty ?? true) || _loading) return;
+
+    _playbackTimer?.cancel();
+    setState(() => _isPlaying = true);
+    _playbackTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      if (!mounted) return;
+      final next = _playbackProgress + 0.004 * _speedMultiplier;
+      setState(() {
+        _playbackProgress = next.clamp(0, 1);
+        _isPlaying = _playbackProgress < 1;
+      });
+      if (_playbackProgress >= 1) {
+        _playbackTimer?.cancel();
+      }
+    });
+  }
+
+  void _pause() {
+    _playbackTimer?.cancel();
+    setState(() => _isPlaying = false);
+  }
+
+  void _resetPlayback() {
+    _playbackTimer?.cancel();
+    setState(() {
+      _isPlaying = false;
+      _playbackProgress = 0;
+    });
+  }
+
+  void _seekPlayback(double value) {
+    setState(() => _playbackProgress = value);
+  }
+
+  void _setSpeed(double value) {
+    setState(() => _speedMultiplier = value);
+  }
+
+  int _currentCommandIndex(GcodeLoadSnapshot? snapshot) {
+    final commandCount = snapshot?.commands.length ?? 0;
+    if (commandCount == 0) return -1;
+    return (_playbackProgress * commandCount).ceil().clamp(1, commandCount) - 1;
+  }
+
   @override
   Widget build(BuildContext context) {
     final snapshot = _snapshot;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('G-code Core 调用示例'),
+        title: const Text('G-code Core 绘制示例'),
         actions: [
           TextButton.icon(
             onPressed: _loading ? null : _loadSample,
@@ -136,13 +195,33 @@ G2 X40 Y40
                 children: [
                   Expanded(
                     flex: 3,
-                    child: _ToolpathCanvas(
-                      segments: snapshot?.segments ?? [],
+                    child: _CanvasPanel(
+                      snapshot: snapshot,
                       parsing: _loading,
+                      progress: _playbackProgress,
+                      isPlaying: _isPlaying,
+                      speedMultiplier: _speedMultiplier,
+                      onPlay: _play,
+                      onPause: _pause,
+                      onReset: _resetPlayback,
+                      onSeek: _seekPlayback,
+                      onSpeedChange: _setSpeed,
                     ),
                   ),
                   const SizedBox(width: 16),
-                  SizedBox(width: 360, child: _ResultPanel(snapshot: snapshot)),
+                  SizedBox(
+                    width: 360,
+                    child: _ResultPanel(
+                      snapshot: snapshot,
+                      currentIndex: _currentCommandIndex(snapshot),
+                      onCommandTap: (index) {
+                        final total = snapshot?.commands.length ?? 0;
+                        if (total == 0) return;
+                        _pause();
+                        setState(() => _playbackProgress = (index + 1) / total);
+                      },
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -199,10 +278,131 @@ class _StatusBar extends StatelessWidget {
   }
 }
 
-class _ResultPanel extends StatelessWidget {
-  const _ResultPanel({required this.snapshot});
+class _CanvasPanel extends StatelessWidget {
+  const _CanvasPanel({
+    required this.snapshot,
+    required this.parsing,
+    required this.progress,
+    required this.isPlaying,
+    required this.speedMultiplier,
+    required this.onPlay,
+    required this.onPause,
+    required this.onReset,
+    required this.onSeek,
+    required this.onSpeedChange,
+  });
 
   final GcodeLoadSnapshot? snapshot;
+  final bool parsing;
+  final double progress;
+  final bool isPlaying;
+  final double speedMultiplier;
+  final VoidCallback onPlay;
+  final VoidCallback onPause;
+  final VoidCallback onReset;
+  final ValueChanged<double> onSeek;
+  final ValueChanged<double> onSpeedChange;
+
+  @override
+  Widget build(BuildContext context) {
+    final segments = snapshot?.segments ?? const <ToolpathSegment>[];
+    final errors = snapshot?.errors.length ?? 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: GcodeCanvas(
+                  segments: segments,
+                  progress: parsing ? 1 : progress,
+                  errorCount: errors,
+                ),
+              ),
+              Positioned(
+                left: 12,
+                top: 12,
+                child: _CanvasLegend(
+                  parsing: parsing,
+                  segments: segments.length,
+                  mainSegments: segments
+                      .where(
+                        (segment) => segment.type == GcodeSegmentType.linear,
+                      )
+                      .length,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        PlaybackControls(
+          isPlaying: isPlaying,
+          progress: parsing ? 1 : progress,
+          speedMultiplier: speedMultiplier,
+          onPlay: onPlay,
+          onPause: onPause,
+          onReset: onReset,
+          onSeek: onSeek,
+          onSpeedChange: onSpeedChange,
+        ),
+      ],
+    );
+  }
+}
+
+class _CanvasLegend extends StatelessWidget {
+  const _CanvasLegend({
+    required this.parsing,
+    required this.segments,
+    required this.mainSegments,
+  });
+
+  final bool parsing;
+  final int segments;
+  final int mainSegments;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.9),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: DefaultTextStyle(
+          style: theme.textTheme.labelMedium!,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(parsing ? '动态解析绘制中' : 'GcodeCanvas 绘制'),
+              const SizedBox(height: 4),
+              Text('主线段 G1: $mainSegments'),
+              Text('移动段 G0/G1: $segments'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ResultPanel extends StatelessWidget {
+  const _ResultPanel({
+    required this.snapshot,
+    required this.currentIndex,
+    required this.onCommandTap,
+  });
+
+  final GcodeLoadSnapshot? snapshot;
+  final int currentIndex;
+  final ValueChanged<int> onCommandTap;
 
   @override
   Widget build(BuildContext context) {
@@ -225,24 +425,13 @@ class _ResultPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        Text('轨迹段', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        for (final segment in current.segments.take(12))
-          ListTile(
-            dense: true,
-            leading: Icon(
-              segment.type == GcodeSegmentType.rapid
-                  ? Icons.near_me
-                  : Icons.timeline,
-            ),
-            title: Text(segment.command.rawLine),
-            subtitle: Text(
-              '(${segment.start.x}, ${segment.start.y}) -> '
-              '(${segment.end.x}, ${segment.end.y})',
-            ),
-          ),
-        if (current.segments.length > 12)
-          Text('还有 ${current.segments.length - 12} 条轨迹段未显示'),
+        CommandTimeline(
+          commands: current.commands,
+          errors: current.errors,
+          currentIndex: currentIndex,
+          onTap: onCommandTap,
+          maxHeight: 360,
+        ),
         const SizedBox(height: 16),
         Text('解析错误', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
@@ -291,220 +480,5 @@ class _Metric extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _ToolpathCanvas extends StatelessWidget {
-  const _ToolpathCanvas({required this.segments, required this.parsing});
-
-  final List<ToolpathSegment> segments;
-  final bool parsing;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _ToolpathPainter(segments),
-                child: Center(
-                  child: segments.isEmpty ? const Text('暂无轨迹') : null,
-                ),
-              ),
-            ),
-            Positioned(
-              left: 12,
-              top: 12,
-              child: _CanvasLegend(
-                parsing: parsing,
-                segments: segments.length,
-                mainSegments: segments
-                    .where((segment) => segment.type == GcodeSegmentType.linear)
-                    .length,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CanvasLegend extends StatelessWidget {
-  const _CanvasLegend({
-    required this.parsing,
-    required this.segments,
-    required this.mainSegments,
-  });
-
-  final bool parsing;
-  final int segments;
-  final int mainSegments;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.9),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: DefaultTextStyle(
-          style: theme.textTheme.labelMedium!,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(parsing ? '动态解析绘制中' : 'Canvas 轨迹绘制'),
-              const SizedBox(height: 4),
-              Text('主线段 G1: $mainSegments'),
-              Text('移动段 G0/G1: $segments'),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ToolpathPainter extends CustomPainter {
-  const _ToolpathPainter(this.segments);
-
-  final List<ToolpathSegment> segments;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final gridPaint = Paint()
-      ..color = const Color(0xffe5e7eb)
-      ..strokeWidth = 1;
-
-    for (var x = 0.0; x <= size.width; x += 40) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
-    }
-    for (var y = 0.0; y <= size.height; y += 40) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
-
-    if (segments.isEmpty) return;
-
-    final bounds = _boundsFor(segments);
-    final scale = _scaleFor(bounds, size);
-    final origin = Offset(
-      (size.width - bounds.width * scale) / 2,
-      (size.height - bounds.height * scale) / 2,
-    );
-
-    Offset mapPoint(MachinePosition point) {
-      final x = origin.dx + (point.x - bounds.left) * scale;
-      final y = origin.dy + (bounds.bottom - point.y) * scale;
-      return Offset(x, y);
-    }
-
-    final rapidPaint = Paint()
-      ..color = const Color(0xfff97316)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    final linearPaint = Paint()
-      ..color = const Color(0xff2563eb)
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
-    final startPaint = Paint()..color = const Color(0xff16a34a);
-    final endPaint = Paint()..color = const Color(0xffdc2626);
-
-    final mainPath = Path();
-    var hasMainPath = false;
-
-    for (final segment in segments) {
-      final start = mapPoint(segment.start);
-      final end = mapPoint(segment.end);
-
-      if (segment.type == GcodeSegmentType.rapid) {
-        _drawDashedLine(canvas, start, end, rapidPaint);
-      } else {
-        mainPath.moveTo(start.dx, start.dy);
-        mainPath.lineTo(end.dx, end.dy);
-        hasMainPath = true;
-      }
-    }
-
-    if (hasMainPath) {
-      canvas.drawPath(mainPath, linearPaint);
-    }
-
-    canvas.drawCircle(mapPoint(segments.first.start), 4, startPaint);
-    canvas.drawCircle(mapPoint(segments.last.end), 4, endPaint);
-  }
-
-  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
-    const dash = 8.0;
-    const gap = 6.0;
-    final delta = end - start;
-    final distance = delta.distance;
-    if (distance == 0) return;
-
-    final direction = delta / distance;
-    var drawn = 0.0;
-    while (drawn < distance) {
-      final next = math.min(drawn + dash, distance);
-      canvas.drawLine(
-        start + direction * drawn,
-        start + direction * next,
-        paint,
-      );
-      drawn = next + gap;
-    }
-  }
-
-  Rect _boundsFor(List<ToolpathSegment> segments) {
-    var minX = double.infinity;
-    var maxX = -double.infinity;
-    var minY = double.infinity;
-    var maxY = -double.infinity;
-
-    for (final segment in segments) {
-      minX = math.min(minX, math.min(segment.start.x, segment.end.x));
-      maxX = math.max(maxX, math.max(segment.start.x, segment.end.x));
-      minY = math.min(minY, math.min(segment.start.y, segment.end.y));
-      maxY = math.max(maxY, math.max(segment.start.y, segment.end.y));
-    }
-
-    if (minX == maxX) {
-      minX -= 1;
-      maxX += 1;
-    }
-    if (minY == maxY) {
-      minY -= 1;
-      maxY += 1;
-    }
-
-    return Rect.fromLTRB(minX, minY, maxX, maxY).inflate(4);
-  }
-
-  double _scaleFor(Rect bounds, Size size) {
-    const padding = 24.0;
-    final availableWidth = math.max(1, size.width - padding * 2);
-    final availableHeight = math.max(1, size.height - padding * 2);
-    return math.min(
-      availableWidth / bounds.width,
-      availableHeight / bounds.height,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _ToolpathPainter oldDelegate) {
-    return oldDelegate.segments != segments;
   }
 }
