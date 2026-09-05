@@ -2,16 +2,16 @@
   "schema": "vibecoding.harness.ai_analysis.v2",
   "mode": "package_contract",
   "node": {
-    "id": "flutter_forge.workspace.gcode_core",
+    "id": "gcode_core",
     "kind": "flutter_package",
     "package": "gcode_core",
-    "path": "packages/gcode_core",
+    "path": ".",
     "status": "active"
   },
   "package_type": "flutter_package",
   "workspace": {
-    "member": true,
-    "resolution": "workspace",
+    "member": false,
+    "resolution": "standalone",
     "resolution_status": "active",
     "resolution_blocker": "none"
   },
