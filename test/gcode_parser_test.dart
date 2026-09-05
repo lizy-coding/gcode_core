@@ -1,4 +1,4 @@
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:gcode_core/gcode_core.dart';
 
 void main() {
@@ -103,6 +103,35 @@ G1 X20 Y20
       expect(result.commands, hasLength(2));
       expect(result.errors, hasLength(1));
       expect(result.errors.first.lineNumber, 2);
+    });
+
+    test('parses G90 as valid command', () {
+      final result = parser.parse('G90');
+      expect(result.commands, hasLength(1));
+      expect(result.commands.first.code, 'G90');
+      expect(result.errors, isEmpty);
+    });
+
+    test('parses G91 as valid command', () {
+      final result = parser.parse('G91');
+      expect(result.commands, hasLength(1));
+      expect(result.commands.first.code, 'G91');
+      expect(result.errors, isEmpty);
+    });
+
+    test('parses G90 with comment only', () {
+      final result = parser.parse('G90 ; set absolute mode');
+      expect(result.commands, hasLength(1));
+      expect(result.commands.first.code, 'G90');
+      expect(result.commands.first.comment, 'set absolute mode');
+    });
+
+    test('parses sequential G90 and G91', () {
+      final result = parser.parse('G90\nG91\nG1 X10 Y10');
+      expect(result.commands, hasLength(3));
+      expect(result.commands[0].code, 'G90');
+      expect(result.commands[1].code, 'G91');
+      expect(result.commands[2].code, 'G1');
     });
 
     test('parseRecord preserves readline metadata', () {

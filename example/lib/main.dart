@@ -319,6 +319,7 @@ class _CanvasPanel extends StatelessWidget {
                   segments: segments,
                   progress: parsing ? 1 : progress,
                   errorCount: errors,
+                  bounds: snapshot?.bounds,
                 ),
               ),
               Positioned(

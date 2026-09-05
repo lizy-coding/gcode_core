@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../core/gcode_bounds.dart';
+import '../core/gcode_style.dart';
 import '../models/gcode_command.dart';
 import '../models/toolpath_segment.dart';
 
@@ -11,14 +13,24 @@ class GcodeCanvas extends StatelessWidget {
     required this.segments,
     required this.progress,
     this.errorCount = 0,
+    this.commandCount = 0,
+    this.bounds,
+    this.style,
+    this.showLegend = true,
   });
 
   final List<ToolpathSegment> segments;
   final double progress;
   final int errorCount;
+  final int commandCount;
+  final GcodeBounds? bounds;
+  final GcodeStyle? style;
+  final bool showLegend;
 
   @override
   Widget build(BuildContext context) {
+    final effectiveStyle = style ?? GcodeStyle.light();
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
@@ -27,56 +39,237 @@ class GcodeCanvas extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          if (segments.isEmpty) {
-            return SizedBox(
-              width: constraints.maxWidth,
-              height: constraints.maxHeight,
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.draw_outlined,
-                      size: 48,
-                      color: Colors.grey.shade400,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      errorCount > 0
-                          ? '存在 $errorCount 个解析错误，无有效轨迹'
-                          : '输入并解析 G-code 后显示轨迹',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
+          Widget content;
+
+          if (segments.isEmpty && commandCount == 0) {
+            content = _buildEmptyState();
+          } else if (segments.isEmpty && commandCount > 0) {
+            content = _buildNoMovementState(commandCount);
+          } else if (segments.isNotEmpty && errorCount > 0) {
+            content = _buildPartialErrorState(constraints, effectiveStyle);
+          } else {
+            content = Stack(
+              children: [
+                CustomPaint(
+                  size: Size(constraints.maxWidth, constraints.maxHeight),
+                  painter: _ToolpathPainter(
+                    segments: segments,
+                    progress: progress,
+                    bounds: bounds,
+                    style: effectiveStyle,
+                  ),
                 ),
-              ),
+                if (showLegend)
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: _CanvasLegend(style: effectiveStyle),
+                  ),
+              ],
             );
           }
 
-          return CustomPaint(
-            size: Size(constraints.maxWidth, constraints.maxHeight),
-            painter: _ToolpathPainter(
-              segments: segments,
-              progress: progress,
-            ),
-          );
+          return content;
         },
       ),
     );
   }
+
+  Widget _buildEmptyState() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.draw_outlined, size: 48, color: Colors.grey),
+          SizedBox(height: 12),
+          Text(
+            '输入并解析 G-code 后显示轨迹',
+            style: TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoMovementState(int cmds) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.info_outline, size: 48, color: Colors.orange.shade300),
+          const SizedBox(height: 12),
+          Text(
+            '已解析 $cmds 条指令，但未产生运动轨迹',
+            style: const TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '提示：G1 F1200 仅设置进给率，需配合 X/Y 坐标',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPartialErrorState(BoxConstraints constraints, GcodeStyle style) {
+    return Stack(
+      children: [
+        CustomPaint(
+          size: Size(constraints.maxWidth, constraints.maxHeight),
+          painter: _ToolpathPainter(
+            segments: segments,
+            progress: progress,
+            bounds: bounds,
+            style: style,
+          ),
+        ),
+        if (showLegend)
+          Positioned(
+            left: 8,
+            bottom: 8,
+            child: _CanvasLegend(style: style),
+          ),
+        Positioned(
+          top: 8,
+          right: 8,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: 0.8),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              '$errorCount 个解析错误',
+              style: const TextStyle(
+                fontSize: 11,
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CanvasLegend extends StatelessWidget {
+  const _CanvasLegend({required this.style});
+
+  final GcodeStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _legendRow(style.rapidMovePaint, 'G0 快速移动', isDashed: true),
+          const SizedBox(height: 4),
+          _legendRow(style.linearMovePaint, 'G1 线性移动'),
+          const SizedBox(height: 4),
+          _legendRow(style.toolHeadPaint, '当前刀头', isCircle: true),
+          const SizedBox(height: 4),
+          _legendRow(
+              Paint()
+                ..color = const Color(0x99FF9800)
+                ..strokeWidth = 1.5,
+              '原点',
+              isCross: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _legendRow(Paint paint, String label,
+      {bool isDashed = false, bool isCircle = false, bool isCross = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 24,
+          height: 12,
+          child: CustomPaint(
+            painter: _LegendIconPainter(
+              iconPaint: paint,
+              isDashed: isDashed,
+              isCircle: isCircle,
+              isCross: isCross,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 11)),
+      ],
+    );
+  }
+}
+
+class _LegendIconPainter extends CustomPainter {
+  _LegendIconPainter({
+    required Paint iconPaint,
+    this.isDashed = false,
+    this.isCircle = false,
+    this.isCross = false,
+  }) : _iconPaint = iconPaint;
+
+  final Paint _iconPaint;
+  final bool isDashed;
+  final bool isCircle;
+  final bool isCross;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (isCircle) {
+      canvas.drawCircle(Offset(size.width / 2, size.height / 2), 4, _iconPaint);
+    } else if (isCross) {
+      final cx = size.width / 2;
+      final cy = size.height / 2;
+      canvas.drawLine(Offset(cx - 4, cy), Offset(cx + 4, cy), _iconPaint);
+      canvas.drawLine(Offset(cx, cy - 4), Offset(cx, cy + 4), _iconPaint);
+    } else if (isDashed) {
+      const dash = 4.0;
+      const gap = 3.0;
+      var dx = 0.0;
+      while (dx < size.width) {
+        final end = (dx + dash).clamp(0.0, size.width);
+        canvas.drawLine(Offset(dx, size.height / 2),
+            Offset(end, size.height / 2), _iconPaint);
+        dx = end + gap;
+      }
+    } else {
+      canvas.drawLine(
+        Offset(0, size.height / 2),
+        Offset(size.width, size.height / 2),
+        _iconPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _ToolpathPainter extends CustomPainter {
   _ToolpathPainter({
     required this.segments,
     required this.progress,
+    required this.bounds,
+    required this.style,
   });
 
   final List<ToolpathSegment> segments;
   final double progress;
+  final GcodeBounds? bounds;
+  final GcodeStyle style;
 
   static const _padding = 30.0;
   static const _gridSpacing = 20.0;
@@ -85,11 +278,11 @@ class _ToolpathPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (segments.isEmpty) return;
 
-    final bounds = _calculateBounds();
-    final machineRangeX = bounds.maxX - bounds.minX;
-    final machineRangeY = bounds.maxY - bounds.minY;
-    final scaleX = (size.width - _padding * 2) / max(machineRangeX, 1);
-    final scaleY = (size.height - _padding * 2) / max(machineRangeY, 1);
+    final b = bounds ?? _computeBounds();
+    final machineRangeX = max(b.maxX - b.minX, 1.0);
+    final machineRangeY = max(b.maxY - b.minY, 1.0);
+    final scaleX = (size.width - _padding * 2) / machineRangeX;
+    final scaleY = (size.height - _padding * 2) / machineRangeY;
     final scale = min(scaleX, scaleY);
 
     final offsetX =
@@ -97,47 +290,49 @@ class _ToolpathPainter extends CustomPainter {
     final offsetY =
         _padding + (size.height - _padding * 2 - machineRangeY * scale) / 2;
 
-    _drawGrid(canvas, size, bounds, scale, offsetX, offsetY);
-    _drawFullPath(canvas, bounds, scale, offsetX, offsetY);
-    _drawAnimatedPath(canvas, bounds, scale, offsetX, offsetY);
-    _drawToolHead(canvas, bounds, scale, offsetX, offsetY);
-    _drawOrigin(canvas, bounds, scale, offsetX, offsetY);
+    _drawGrid(canvas, size, b, scale, offsetX, offsetY);
+    _drawFullPath(canvas, b, scale, offsetX, offsetY);
+    _drawAnimatedPath(canvas, b, scale, offsetX, offsetY);
+    _drawToolHead(canvas, b, scale, offsetX, offsetY);
+    _drawOrigin(canvas, b, scale, offsetX, offsetY);
   }
 
   void _drawGrid(
     Canvas canvas,
     Size size,
-    _Bounds bounds,
+    GcodeBounds bounds,
     double scale,
     double offsetX,
     double offsetY,
   ) {
-    final gridPaint = Paint()
-      ..color = Colors.grey.withValues(alpha: 0.15)
-      ..strokeWidth = 0.5;
-
     final gridStep = _gridSpacing / scale;
 
     var x = (bounds.minX / gridStep).floor() * gridStep;
     while (x <= bounds.maxX) {
       final sx = offsetX + (x - bounds.minX) * scale;
-      canvas.drawLine(Offset(sx, offsetY),
-          Offset(sx, offsetY + (bounds.maxY - bounds.minY) * scale), gridPaint);
+      canvas.drawLine(
+        Offset(sx, offsetY),
+        Offset(sx, offsetY + (bounds.maxY - bounds.minY) * scale),
+        style.gridPaint,
+      );
       x += gridStep;
     }
 
     var y = (bounds.minY / gridStep).floor() * gridStep;
     while (y <= bounds.maxY) {
       final sy = offsetY + (bounds.maxY - y - bounds.minY) * scale;
-      canvas.drawLine(Offset(offsetX, sy),
-          Offset(offsetX + (bounds.maxX - bounds.minX) * scale, sy), gridPaint);
+      canvas.drawLine(
+        Offset(offsetX, sy),
+        Offset(offsetX + (bounds.maxX - bounds.minX) * scale, sy),
+        style.gridPaint,
+      );
       y += gridStep;
     }
   }
 
   void _drawFullPath(
     Canvas canvas,
-    _Bounds bounds,
+    GcodeBounds bounds,
     double scale,
     double offsetX,
     double offsetY,
@@ -148,25 +343,26 @@ class _ToolpathPainter extends CustomPainter {
       final ex = offsetX + (seg.end.x - bounds.minX) * scale;
       final ey = offsetY + (bounds.maxY - seg.end.y - bounds.minY) * scale;
 
-      final paint = Paint()
-        ..color = seg.type == GcodeSegmentType.rapid
-            ? Colors.red.withValues(alpha: 0.25)
-            : Colors.green.withValues(alpha: 0.15)
-        ..strokeWidth = 1
-        ..style = PaintingStyle.stroke;
-
       if (seg.type == GcodeSegmentType.rapid) {
-        paint.strokeWidth = 1;
-        _drawDashedLine(canvas, Offset(sx, sy), Offset(ex, ey), paint);
+        _drawDashedLine(
+          canvas,
+          Offset(sx, sy),
+          Offset(ex, ey),
+          style.rapidMoveBgPaint,
+        );
       } else {
-        canvas.drawLine(Offset(sx, sy), Offset(ex, ey), paint);
+        canvas.drawLine(
+          Offset(sx, sy),
+          Offset(ex, ey),
+          style.linearMoveBgPaint,
+        );
       }
     }
   }
 
   void _drawAnimatedPath(
     Canvas canvas,
-    _Bounds bounds,
+    GcodeBounds bounds,
     double scale,
     double offsetX,
     double offsetY,
@@ -195,17 +391,19 @@ class _ToolpathPainter extends CustomPainter {
       final ex = offsetX + (endX - bounds.minX) * scale;
       final ey = offsetY + (bounds.maxY - endY - bounds.minY) * scale;
 
-      final paint = Paint()
-        ..color = seg.type == GcodeSegmentType.rapid ? Colors.red : Colors.green
-        ..strokeWidth = seg.type == GcodeSegmentType.rapid ? 1.5 : 2.5
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round;
-
       if (seg.type == GcodeSegmentType.rapid) {
-        paint.strokeWidth = 1.5;
-        _drawDashedLine(canvas, Offset(sx, sy), Offset(ex, ey), paint);
+        _drawDashedLine(
+          canvas,
+          Offset(sx, sy),
+          Offset(ex, ey),
+          style.rapidMovePaint,
+        );
       } else {
-        canvas.drawLine(Offset(sx, sy), Offset(ex, ey), paint);
+        canvas.drawLine(
+          Offset(sx, sy),
+          Offset(ex, ey),
+          style.linearMovePaint,
+        );
       }
     }
   }
@@ -232,7 +430,7 @@ class _ToolpathPainter extends CustomPainter {
 
   void _drawToolHead(
     Canvas canvas,
-    _Bounds bounds,
+    GcodeBounds bounds,
     double scale,
     double offsetX,
     double offsetY,
@@ -251,21 +449,13 @@ class _ToolpathPainter extends CustomPainter {
     final sx = offsetX + (toolX - bounds.minX) * scale;
     final sy = offsetY + (bounds.maxY - toolY - bounds.minY) * scale;
 
-    final paint = Paint()
-      ..color = Colors.red
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(Offset(sx, sy), 5, paint);
-
-    final outerPaint = Paint()
-      ..color = Colors.red.withValues(alpha: 0.3)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(sx, sy), 10, outerPaint);
+    canvas.drawCircle(Offset(sx, sy), 10, style.toolHeadGlowPaint);
+    canvas.drawCircle(Offset(sx, sy), 5, style.toolHeadPaint);
   }
 
   void _drawOrigin(
     Canvas canvas,
-    _Bounds bounds,
+    GcodeBounds bounds,
     double scale,
     double offsetX,
     double offsetY,
@@ -273,18 +463,15 @@ class _ToolpathPainter extends CustomPainter {
     final ox = offsetX + (0 - bounds.minX) * scale;
     final oy = offsetY + (bounds.maxY - 0 - bounds.minY) * scale;
 
-    final paint = Paint()
-      ..color = Colors.orange.withValues(alpha: 0.6)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
     const size = 6;
-    canvas.drawLine(Offset(ox - size, oy), Offset(ox + size, oy), paint);
-    canvas.drawLine(Offset(ox, oy - size), Offset(ox, oy + size), paint);
-    canvas.drawCircle(Offset(ox, oy), 2, paint..style = PaintingStyle.fill);
+    canvas.drawLine(
+        Offset(ox - size, oy), Offset(ox + size, oy), style.originPaint);
+    canvas.drawLine(
+        Offset(ox, oy - size), Offset(ox, oy + size), style.originPaint);
+    canvas.drawCircle(Offset(ox, oy), 2, style.originDotPaint);
   }
 
-  _Bounds _calculateBounds() {
+  GcodeBounds _computeBounds() {
     var minX = double.infinity;
     var maxX = double.negativeInfinity;
     var minY = double.infinity;
@@ -297,20 +484,19 @@ class _ToolpathPainter extends CustomPainter {
       maxY = max(maxY, max(seg.start.y, seg.end.y));
     }
 
-    return _Bounds(minX, maxX, minY, maxY);
+    return GcodeBounds(
+      minX: minX,
+      maxX: maxX,
+      minY: minY,
+      maxY: maxY,
+    );
   }
 
   @override
   bool shouldRepaint(covariant _ToolpathPainter oldDelegate) {
-    return oldDelegate.progress != progress || oldDelegate.segments != segments;
+    return oldDelegate.progress != progress ||
+        oldDelegate.segments != segments ||
+        oldDelegate.bounds != bounds ||
+        oldDelegate.style != style;
   }
-}
-
-class _Bounds {
-  const _Bounds(this.minX, this.maxX, this.minY, this.maxY);
-
-  final double minX;
-  final double maxX;
-  final double minY;
-  final double maxY;
 }

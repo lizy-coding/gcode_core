@@ -4,7 +4,7 @@ import '../domain/parsed_gcode_line.dart';
 import 'gcode_parse_result.dart';
 
 class GcodeParser {
-  static const _supportedCodes = {'G0', 'G00', 'G1', 'G01'};
+  static const _supportedCodes = {'G0', 'G00', 'G1', 'G01', 'G90', 'G91'};
   static final _paramPattern = RegExp(r'^([A-Za-z])(-?(?:\d+\.?\d*|\.\d+))$');
 
   GcodeParseResult parse(String source) {

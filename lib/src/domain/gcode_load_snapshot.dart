@@ -1,3 +1,4 @@
+import '../core/gcode_bounds.dart';
 import '../models/gcode_command.dart';
 import '../models/toolpath_segment.dart';
 import '../parser/gcode_parse_result.dart';
@@ -12,6 +13,7 @@ class GcodeLoadSnapshot {
     required this.linesRead,
     this.message = '',
     this.diagnosticMessage = '',
+    this.bounds,
   });
 
   factory GcodeLoadSnapshot.empty() {
@@ -31,6 +33,7 @@ class GcodeLoadSnapshot {
   final int linesRead;
   final String message;
   final String diagnosticMessage;
+  final GcodeBounds? bounds;
 
   GcodeParseResult toParseResult() {
     return GcodeParseResult(commands: commands, errors: errors);

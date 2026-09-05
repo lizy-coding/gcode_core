@@ -1,6 +1,8 @@
 library gcode_core;
 
 export 'src/application/gcode_readline_pipeline.dart';
+export 'src/core/gcode_bounds.dart';
+export 'src/core/gcode_style.dart';
 export 'src/data/readers/file_gcode_line_reader.dart';
 export 'src/data/readers/gcode_line_reader.dart';
 export 'src/data/readers/string_gcode_line_reader.dart';
