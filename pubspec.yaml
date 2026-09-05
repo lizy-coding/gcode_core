@@ -5,8 +5,11 @@ version: 0.1.0
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
+  flutter: '>=3.47.2'
 
 dependencies:
+  flutter_gpu:
+    sdk: flutter
   flutter:
     sdk: flutter
 
@@ -16,3 +19,5 @@ dev_dependencies:
   lints: ^4.0.0
 
 flutter:
+  assets:
+    - shaders/toolpath.shaderbundle

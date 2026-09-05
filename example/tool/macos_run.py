@@ -12,6 +12,7 @@ parser.add_argument('--target', default='lib/main.dart')
 parser.add_argument('--build-only', action='store_true')
 args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parents[1]
+subprocess.run(['python3',str(root/'tool/build_gpu_shaders.py')],check=True)
 os.environ['GCODE_REAL_CLANG'] = subprocess.check_output(['xcrun','--find','clang'], text=True).strip()
 subprocess.run(['flutter','build','macos',f'--{args.mode}','--config-only','-t',args.target],cwd=root,check=True)
 subprocess.run(['xcodebuild','-workspace','macos/Runner.xcworkspace','-scheme','Runner',
