@@ -1,0 +1,10 @@
+{
+  "segments": 10000,
+  "frames": 3595,
+  "seconds": 60,
+  "uiP95Ms": 1.396,
+  "rasterP95Ms": 0.851,
+  "overBudgetFrames": 0,
+  "reloadCycles": 20,
+  "output": "docs/evidence/macos-2d"
+}

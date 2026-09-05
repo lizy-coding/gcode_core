@@ -10,10 +10,51 @@ G-code parsing and visualization package extracted for Flutter Forge.
 - Parse G0/G1 commands with X/Y/F parameters.
 - Collect parse errors with line metadata.
 - Build incremental or batch toolpath segments.
-- Render toolpaths with Flutter `CustomPaint`.
+- Render paths, grid, origin and moving markers with Flutter GPU.
 - Render command timelines and playback controls for Flutter frontends.
 
 This package does not open system file pickers or own app-level playback state.
+
+## macOS GPU drawing
+
+Flutter 3.47.2 or newer is required. `GcodeCanvas` is GPU-only: G0 dashes,
+G1 lines, background paths, playback, grid, origin, tool head and glow are all
+rendered by GPU shaders. There is no Canvas backend or automatic fallback.
+Flutter only composites the resulting image and displays ordinary UI widgets.
+Only macOS has been exercised in this implementation phase.
+
+```dart
+GcodeCanvas(
+  segments: snapshot.segments,
+  bounds: snapshot.bounds,
+  progress: progress,
+)
+```
+
+Treat the segment list as immutable; replace it when path data changes. Viewport
+and line-width changes rebuild geometry; playback only updates GPU uniforms.
+The host must enable Impeller and Flutter GPU. The macOS example contains the
+required Info.plist settings. Shader sources and their compiled SDK bundle live
+under `shaders/`; `python3 example/tool/build_gpu_shaders.py` regenerates them.
+The macOS compatibility runner automatically runs shader compilation:
+
+```sh
+python3 example/tool/macos_run.py --mode release
+python3 example/tool/macos_run.py --mode profile --target lib/gpu_validation.dart
+```
+
+The validation entry point writes GPU scene images at different progress values, runs 20
+recreation/resize cycles, and measures 10,000 parsed G0/G1 segments. Its log
+reports the output directory. This does not benchmark file loading or snapshots.
+
+### API migration
+
+Remove the former `backend` argument and `GcodeCanvasBackend` references.
+`GcodeStyle` uses immutable `GcodeStroke(color, width)` values (`rapidMove`,
+`rapidBackground`, `linearMove`, `linearBackground`, `grid`, `origin`) and color
+fields (`toolHeadColor`, `toolHeadGlowColor`, `originDotColor`), replacing Paint
+objects. Unsupported GPU initialization is reported as an error, never a
+fallback renderer.
 
 ## Test
 

@@ -1,0 +1,11 @@
+{
+  "lib/src/widgets/gcode_canvas.dart": "06f8a10d3ac5f4317f5e02d76011a9f7a43d7a87074b4eee6d7af9c8b863737c",
+  "pubspec.yaml": "11456d621d257a30b92d5f8f075fcc589f9dcd63d0af440bd02e674441597606",
+  "lib/src/rendering/toolpath_geometry.dart": "61b061d20f968016d187ca6a0555252916a63e881a04cb6a69fa4b130b6c170d",
+  "lib/src/rendering/gpu_toolpath_layer.dart": "9a8b31a011d1ecf1662499285fda1516836703cbe19c4c1dda69c8f0b791430c",
+  "shaders/toolpath.shaderbundle": "d2315a2f2d241f4cd75314f4b532f7607cc5c87b5e4514e8468dc18618e91945",
+  "shaders/toolpath.frag": "ee59819c8a417deb5baf0f8d9bd6e851e38bbc3bbb4b04a274c2fdd4e778c3b8",
+  "shaders/toolpath.vert": "382459079cb2cbe645e7ea52b29ef5610da92483b6b1ad725658fa846751383b",
+  "example/lib/main.dart": "7686f7dd65891ff75f2b705c9be8ab0225e6bec03fe7bb2863a54d9553499ee2",
+  "example/lib/gpu_validation.dart": "eb3142ae5371af715a49ef4838a675d9e828a84813ad4539eaf9aa254280edd5"
+}
