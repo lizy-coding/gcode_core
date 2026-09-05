@@ -36,3 +36,19 @@ Run it from this directory:
 ```bash
 flutter run
 ```
+# macOS 本机构建兼容入口
+
+若 Xcode 26.6 卡在 `clang -v -E -dM`，从本目录运行：
+
+```sh
+python3 tool/macos_run.py --mode release
+```
+
+GPU 探针使用：
+
+```sh
+python3 tool/build_gpu_shaders.py
+python3 tool/macos_run.py --mode profile --target lib/gpu_probe.dart
+```
+
+此入口对本次 xcodebuild 使用局部编译器探测包装，不修改系统或 Flutter SDK；常规编译与错误退出码仍来自真实 clang。GPU 探针为合成 10,000 段实验，并非完整 G-code renderer。详细限制见 [验证报告](../docs/macos-gpu-probe.md)。

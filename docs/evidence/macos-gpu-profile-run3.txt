@@ -1,0 +1,4 @@
+[IMPORTANT:flutter/shell/platform/embedder/embedder_surface_metal_impeller.mm(53)] Using the Impeller rendering backend (MetalSDF).
+flutter: The Dart VM service is listening on http://127.0.0.1:55672/pBA4yokUdYk=/
+flutter: GPU_PROBE_READY segments=10000 geometryBytes=480000
+flutter: GPU_PROBE_RESULT {"segments":10000,"sampleSeconds":60,"frames":1951,"uiP95Ms":0.46,"rasterP95Ms":0.738,"overBudgetRatio":0.0005125576627370579,"physicalWidth":1600,"physicalHeight":1088,"scope":"synthetic solid quads, not feature parity"}
