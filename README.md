@@ -4,6 +4,38 @@
 
 G-code parsing and visualization package extracted for Flutter Forge.
 
+## First macOS prerelease: 0.2.0-dev.1
+
+This release is distributed through GitHub/Git, not pub.dev. Pin the release tag
+instead of following `dev`:
+
+```yaml
+dependencies:
+  gcode_core:
+    git:
+      url: https://github.com/lizy-coding/gcode_core.git
+      ref: v0.2.0-dev.1
+```
+
+See [release notes](docs/releases/0.2.0-dev.1.md) and
+[CHANGELOG](CHANGELOG.md) for breaking changes and validation limits.
+
+For a macOS host, use Flutter 3.47.2 and add these keys to the top-level dict in
+`macos/Runner/Info.plist`:
+
+```xml
+<key>FLTEnableImpeller</key>
+<true/>
+<key>FLTEnableFlutterGPU</key>
+<true/>
+```
+
+The host needs a macOS deployment target of at least 12.0; runtime evidence is
+currently limited to macOS 26.5 on Apple Silicon. The package bundles its shader
+asset automatically. Example Xcode/CocoaPods workarounds do not propagate into
+consumer apps and should only be adopted if the same build issue occurs.
+This is a Flutter package; its public entry point is not a pure Dart CLI API.
+
 ## Scope
 
 - Read G-code from strings or files line by line.
@@ -68,17 +100,17 @@ Run the Flutter example app:
 
 ```bash
 cd example
-flutter run
+flutter run -d macos
 ```
+
+IDE runs use `example/lib/main.dart` with the macOS device. The example's
+Xcode and CocoaPods configurations enable the scoped compiler-probe workaround
+automatically, including Debug builds. The Flutter build phase also removes
+non-macOS deployment-target environment variables that conflict with clang's
+Debug framework build. No global Xcode or Flutter SDK changes are required.
 
 The example demonstrates local file selection, streaming parse snapshots,
 `GcodeCanvas` drawing, `CommandTimeline`, and `PlaybackControls`.
-
-Run the console example:
-
-```bash
-dart run example/gcode_core_example.dart
-```
 
 Minimal usage:
 

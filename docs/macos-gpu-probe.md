@@ -8,7 +8,13 @@
 
 Xcode 的 compiler probe 存在管道输出阻塞：clang 卡在 write，SwiftBuild service 等待；直接执行 clang 正常。将探测输出先完整收集，再去除成功探测 stderr 中的内部 `-cc1` 命令回显后，构建成功。此处理仅用于 `-v -E -dM ... /dev/null`，stdout 宏定义、版本诊断和退出码保留；正常编译直接 exec 原始 clang。对宏输出相等、真实 C 文件编译、错误诊断/退出码已验证。底层 SwiftBuild 管道调度问题的具体根因仍未确定，因此这是本机 Xcode 的有界兼容处理，不声称修复了 Xcode 本身。
 
-持久化工具：`example/tool/macos_run.py` 配合 `tool/macos/compiler_probe.py`，仅在本次 xcodebuild 命令设置 CC；不修改 SDK、系统权限或全局编译器。真实编译器由外层 xcrun 解析后通过任务专用环境变量传入。包装文件保留 `.py` 名称；早期命名为 `clang` 的尝试仍发生阻塞，未作为交付路径。Xcode 会提示包装编译器未识别/显式模块支持受限，这是采用兼容工具的构建代价。
+持久化工具：`example/tool/macos_run.py` 配合 `tool/macos/compiler_probe.py`。现已通过 Runner 的 Debug/Release xcconfig（Profile 复用 Release）和 Podfile 的 post_install 设置项目级 CC，使普通 Flutter Run 和 IDE Run 同样生效；不修改 SDK、系统权限或全局编译器。真实编译器优先采用任务专用环境变量，否则由 xcrun 解析。包装文件保留 `.py` 名称；早期命名为 `clang` 的尝试仍发生阻塞，未作为交付路径。Xcode 会提示包装编译器未识别/显式模块支持受限，这是采用兼容工具的构建代价。
+
+### 2026-09-05 IDE Debug 构建修复验证
+
+修复 compiler probe 后，Debug 构建暴露出第二个错误：`conflicting deployment targets`。Xcode 26.6 的构建环境包含 iOS/tvOS/watchOS/xrOS/DriverKit 部署目标，Flutter 的 Debug framework clang 调用未显式指定 target。示例的 `flutter_assemble.sh` 仅在 Flutter assemble/embed 阶段移除这些其他平台变量，保留 macOS 部署目标。
+
+验证通过：普通 `flutter run -d macos --debug` 构建成功，应用窗口显示 G-Code Core 绘制示例；随后从 IntelliJ IDEA 的 gcode_core 项目点击 Run，控制台显示 `Built build/macos/Build/Products/Debug/example.app`、`Debug service listening` 和文件同步，Hot Reload 按钮可用。IDE 启动的应用进程持续运行。探测宏 stdout 与原始 clang 完全相等，真实 C 编译成功，错误诊断及退出码保持一致；`git diff --check` 通过。本轮验证范围为 macOS Debug 启动，未重新执行 Profile/Release 或完整 GPU 交互验收。
 
 普通 Flutter 命令尚不自动使用此兼容处理；本机遇到卡点时使用以下命令（仓库根目录）：
 
