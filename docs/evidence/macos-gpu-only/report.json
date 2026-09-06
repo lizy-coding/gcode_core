@@ -1,0 +1,11 @@
+{
+  "segments": 10000,
+  "frames": 1610,
+  "seconds": 60,
+  "uiP95Ms": 1.414,
+  "rasterP95Ms": 0.97,
+  "overBudgetFrames": 3,
+  "reloadCycles": 20,
+  "output": "docs/evidence/macos-gpu-only",
+  "fpsAcceptance": "PENDING: insufficient frame count for a sustained 60 fps result"
+}

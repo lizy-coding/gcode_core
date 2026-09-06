@@ -1,0 +1,26 @@
+{
+  "0.00": {
+    "meanAbsoluteChannelDifference": [
+      0.06071614583333333,
+      0.0859375,
+      0.12257486979166667
+    ],
+    "note": "AA and dash endpoint rasterization can differ; not a bit-exact golden."
+  },
+  "0.45": {
+    "meanAbsoluteChannelDifference": [
+      0.20183268229166668,
+      0.20350911458333334,
+      0.31642252604166665
+    ],
+    "note": "AA and dash endpoint rasterization can differ; not a bit-exact golden."
+  },
+  "1.00": {
+    "meanAbsoluteChannelDifference": [
+      0.37817708333333333,
+      0.37599609375,
+      0.5918131510416667
+    ],
+    "note": "AA and dash endpoint rasterization can differ; not a bit-exact golden."
+  }
+}

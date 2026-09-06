@@ -1,0 +1,2 @@
+[IMPORTANT:flutter/shell/platform/embedder/embedder_surface_metal_impeller.mm(53)] Using the Impeller rendering backend (MetalSDF).
+flutter: GPU_2D_RESULT {"segments":10000,"frames":1610,"seconds":60,"uiP95Ms":1.414,"rasterP95Ms":0.97,"overBudgetFrames":3,"reloadCycles":20,"output":"/Users/forest/Library/Containers/com.example.example/Data/tmp/gcode-2d-validation-Qt2Lua"}

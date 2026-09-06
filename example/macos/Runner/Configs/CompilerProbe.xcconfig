@@ -1,0 +1,3 @@
+// Work around Xcode compiler-probe pipe blocking for ordinary Flutter/IDE runs.
+// Actual compilation is forwarded unchanged to the selected Xcode clang.
+CC = $(SRCROOT)/../tool/macos/compiler_probe.py

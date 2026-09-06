@@ -1,0 +1,2 @@
+** BUILD SUCCEEDED **
+Built /Users/forest/code/langGraph/gcode_core/example/build/macos/Build/Products/Release/example.app

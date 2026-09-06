@@ -382,7 +382,7 @@ class _CanvasLegend extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(parsing ? '动态解析绘制中' : 'GcodeCanvas 绘制'),
+              Text(parsing ? '动态解析绘制中' : 'GPU 轨迹绘制'),
               const SizedBox(height: 4),
               Text('主线段 G1: $mainSegments'),
               Text('移动段 G0/G1: $segments'),
