@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import subprocess,sys,os
-compiler=os.environ['GCODE_REAL_CLANG']
+compiler=os.environ.get('GCODE_REAL_CLANG') or subprocess.check_output(
+ ['xcrun', '--find', 'clang'], text=True).strip()
 args=sys.argv[1:]
 if all(x in args for x in ['-v','-E','-dM']) and args[-1]=='/dev/null':
  r=subprocess.run([compiler,*args],capture_output=True)
