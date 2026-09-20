@@ -52,14 +52,29 @@ G2 X40 Y40
   String _status = '请选择本地 G-code 文件，或加载内置示例。';
   bool _loading = false;
   bool _isPlaying = false;
-  double _playbackProgress = 1;
+  final _playbackProgress = ValueNotifier<double>(1);
+  final _currentCommandIndex = ValueNotifier<int>(-1);
   double _speedMultiplier = 1;
   Timer? _playbackTimer;
 
   @override
   void dispose() {
     _playbackTimer?.cancel();
+    _playbackProgress.dispose();
+    _currentCommandIndex.dispose();
     super.dispose();
+  }
+
+  void _setPlaybackProgress(double value) {
+    final progress = value.clamp(0.0, 1.0).toDouble();
+    _playbackProgress.value = progress;
+    final commandCount = _snapshot?.commands.length ?? 0;
+    final index = commandCount == 0
+        ? -1
+        : (progress * commandCount).ceil().clamp(1, commandCount) - 1;
+    if (_currentCommandIndex.value != index) {
+      _currentCommandIndex.value = index;
+    }
   }
 
   Future<void> _pickAndParseFile() async {
@@ -99,19 +114,19 @@ G2 X40 Y40
     setState(() {
       _loading = true;
       _isPlaying = false;
-      _playbackProgress = 1;
       _sourceName = sourceName;
       _snapshot = null;
       _status = '正在读取 $sourceName';
     });
+    _setPlaybackProgress(1);
 
     await for (final snapshot in snapshots) {
       if (!mounted) return;
       setState(() {
         _snapshot = snapshot;
         _status = snapshot.message;
-        _playbackProgress = 1;
       });
+      _setPlaybackProgress(1);
       if (snapshot.stage == GcodeLoadStage.parsing) {
         await Future<void>.delayed(const Duration(milliseconds: 16));
       }
@@ -125,16 +140,17 @@ G2 X40 Y40
     if ((_snapshot?.segments.isEmpty ?? true) || _loading) return;
 
     _playbackTimer?.cancel();
+    if (_playbackProgress.value >= 1) {
+      _setPlaybackProgress(0);
+    }
     setState(() => _isPlaying = true);
     _playbackTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
       if (!mounted) return;
-      final next = _playbackProgress + 0.004 * _speedMultiplier;
-      setState(() {
-        _playbackProgress = next.clamp(0, 1);
-        _isPlaying = _playbackProgress < 1;
-      });
-      if (_playbackProgress >= 1) {
+      final next = _playbackProgress.value + 0.004 * _speedMultiplier;
+      _setPlaybackProgress(next);
+      if (_playbackProgress.value >= 1) {
         _playbackTimer?.cancel();
+        setState(() => _isPlaying = false);
       }
     });
   }
@@ -146,24 +162,16 @@ G2 X40 Y40
 
   void _resetPlayback() {
     _playbackTimer?.cancel();
-    setState(() {
-      _isPlaying = false;
-      _playbackProgress = 0;
-    });
+    _setPlaybackProgress(0);
+    setState(() => _isPlaying = false);
   }
 
   void _seekPlayback(double value) {
-    setState(() => _playbackProgress = value);
+    _setPlaybackProgress(value);
   }
 
   void _setSpeed(double value) {
     setState(() => _speedMultiplier = value);
-  }
-
-  int _currentCommandIndex(GcodeLoadSnapshot? snapshot) {
-    final commandCount = snapshot?.commands.length ?? 0;
-    if (commandCount == 0) return -1;
-    return (_playbackProgress * commandCount).ceil().clamp(1, commandCount) - 1;
   }
 
   @override
@@ -217,27 +225,33 @@ G2 X40 Y40
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final canvas = _CanvasPanel(
-                    snapshot: snapshot,
-                    parsing: _loading,
-                    progress: _playbackProgress,
-                    isPlaying: _isPlaying,
-                    speedMultiplier: _speedMultiplier,
-                    onPlay: _play,
-                    onPause: _pause,
-                    onReset: _resetPlayback,
-                    onSeek: _seekPlayback,
-                    onSpeedChange: _setSpeed,
+                  final canvas = ValueListenableBuilder<double>(
+                    valueListenable: _playbackProgress,
+                    builder: (context, progress, _) => _CanvasPanel(
+                      snapshot: snapshot,
+                      parsing: _loading,
+                      progress: progress,
+                      isPlaying: _isPlaying,
+                      speedMultiplier: _speedMultiplier,
+                      onPlay: _play,
+                      onPause: _pause,
+                      onReset: _resetPlayback,
+                      onSeek: _seekPlayback,
+                      onSpeedChange: _setSpeed,
+                    ),
                   );
-                  final results = _ResultPanel(
-                    snapshot: snapshot,
-                    currentIndex: _currentCommandIndex(snapshot),
-                    onCommandTap: (index) {
-                      final total = snapshot?.commands.length ?? 0;
-                      if (total == 0) return;
-                      _pause();
-                      setState(() => _playbackProgress = (index + 1) / total);
-                    },
+                  final results = ValueListenableBuilder<int>(
+                    valueListenable: _currentCommandIndex,
+                    builder: (context, currentIndex, _) => _ResultPanel(
+                      snapshot: snapshot,
+                      currentIndex: currentIndex,
+                      onCommandTap: (index) {
+                        final total = snapshot?.commands.length ?? 0;
+                        if (total == 0) return;
+                        _pause();
+                        _setPlaybackProgress((index + 1) / total);
+                      },
+                    ),
                   );
 
                   if (constraints.maxWidth >= 720) {
