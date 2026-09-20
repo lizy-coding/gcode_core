@@ -3,6 +3,7 @@
 import argparse
 import os
 import pathlib
+import platform
 import plistlib
 import subprocess
 
@@ -10,6 +11,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--mode', choices=['debug', 'profile', 'release'], default='debug')
 parser.add_argument('--target', default='lib/main.dart')
 parser.add_argument('--build-only', action='store_true')
+parser.add_argument('--arch', choices=['arm64', 'x86_64'], default=platform.machine())
 args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parents[1]
 subprocess.run(['python3',str(root/'tool/build_gpu_shaders.py')],check=True)
@@ -17,7 +19,7 @@ os.environ['GCODE_REAL_CLANG'] = subprocess.check_output(['xcrun','--find','clan
 subprocess.run(['flutter','build','macos',f'--{args.mode}','--config-only','-t',args.target],cwd=root,check=True)
 subprocess.run(['xcodebuild','-workspace','macos/Runner.xcworkspace','-scheme','Runner',
                 '-configuration',args.mode.capitalize(),'-derivedDataPath','build/macos',
-                '-destination','platform=macOS,arch=arm64',
+                '-destination',f'platform=macOS,arch={args.arch}',
                 'CC='+str(root/'tool/macos/compiler_probe.py'),'COMPILER_INDEX_STORE_ENABLE=NO'],cwd=root,check=True)
 products=root/'build/macos/Build/Products'/args.mode.capitalize()
 apps=list(products.glob('*.app'))
