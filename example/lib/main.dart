@@ -44,7 +44,7 @@ G2 X40 Y40
 ''';
 
   final _pipeline = GcodeReadlinePipeline(
-    options: const GcodeReadlineOptions(snapshotBatchSize: 1),
+    options: const GcodeReadlineOptions(snapshotBatchSize: 200),
   );
 
   GcodeLoadSnapshot? _snapshot;
@@ -71,7 +71,10 @@ G2 X40 Y40
     final file = await openFile(acceptedTypeGroups: [typeGroup]);
     if (file == null) return;
 
-    await _parseReader(FileGcodeLineReader(file.path), sourceName: file.name);
+    await _parseSnapshots(
+      _pipeline.loadFileInBackground(file.path),
+      sourceName: file.name,
+    );
   }
 
   Future<void> _loadSample() {
@@ -84,6 +87,13 @@ G2 X40 Y40
   Future<void> _parseReader(
     GcodeLineReader reader, {
     required String sourceName,
+  }) {
+    return _parseSnapshots(_pipeline.load(reader), sourceName: sourceName);
+  }
+
+  Future<void> _parseSnapshots(
+    Stream<GcodeLoadSnapshot> snapshots, {
+    required String sourceName,
   }) async {
     _playbackTimer?.cancel();
     setState(() {
@@ -95,7 +105,7 @@ G2 X40 Y40
       _status = '正在读取 $sourceName';
     });
 
-    await for (final snapshot in _pipeline.load(reader)) {
+    await for (final snapshot in snapshots) {
       if (!mounted) return;
       setState(() {
         _snapshot = snapshot;
@@ -159,24 +169,39 @@ G2 X40 Y40
   @override
   Widget build(BuildContext context) {
     final snapshot = _snapshot;
+    final compactActions = MediaQuery.sizeOf(context).width < 600;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('G-code Core 绘制示例'),
-        actions: [
-          TextButton.icon(
-            onPressed: _loading ? null : _loadSample,
-            icon: const Icon(Icons.data_object),
-            label: const Text('示例数据'),
-          ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: _loading ? null : _pickAndParseFile,
-            icon: const Icon(Icons.folder_open),
-            label: const Text('选择 G-code'),
-          ),
-          const SizedBox(width: 16),
-        ],
+        title: Text(compactActions ? 'G-code' : 'G-code Core 绘制示例'),
+        actions: compactActions
+            ? [
+                IconButton(
+                  onPressed: _loading ? null : _loadSample,
+                  icon: const Icon(Icons.data_object),
+                  tooltip: '示例数据',
+                ),
+                IconButton(
+                  onPressed: _loading ? null : _pickAndParseFile,
+                  icon: const Icon(Icons.folder_open),
+                  tooltip: '选择 G-code',
+                ),
+                const SizedBox(width: 8),
+              ]
+            : [
+                TextButton.icon(
+                  onPressed: _loading ? null : _loadSample,
+                  icon: const Icon(Icons.data_object),
+                  label: const Text('示例数据'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: _loading ? null : _pickAndParseFile,
+                  icon: const Icon(Icons.folder_open),
+                  label: const Text('选择 G-code'),
+                ),
+                const SizedBox(width: 16),
+              ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
@@ -190,39 +215,53 @@ G2 X40 Y40
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: _CanvasPanel(
-                      snapshot: snapshot,
-                      parsing: _loading,
-                      progress: _playbackProgress,
-                      isPlaying: _isPlaying,
-                      speedMultiplier: _speedMultiplier,
-                      onPlay: _play,
-                      onPause: _pause,
-                      onReset: _resetPlayback,
-                      onSeek: _seekPlayback,
-                      onSpeedChange: _setSpeed,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  SizedBox(
-                    width: 360,
-                    child: _ResultPanel(
-                      snapshot: snapshot,
-                      currentIndex: _currentCommandIndex(snapshot),
-                      onCommandTap: (index) {
-                        final total = snapshot?.commands.length ?? 0;
-                        if (total == 0) return;
-                        _pause();
-                        setState(() => _playbackProgress = (index + 1) / total);
-                      },
-                    ),
-                  ),
-                ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final canvas = _CanvasPanel(
+                    snapshot: snapshot,
+                    parsing: _loading,
+                    progress: _playbackProgress,
+                    isPlaying: _isPlaying,
+                    speedMultiplier: _speedMultiplier,
+                    onPlay: _play,
+                    onPause: _pause,
+                    onReset: _resetPlayback,
+                    onSeek: _seekPlayback,
+                    onSpeedChange: _setSpeed,
+                  );
+                  final results = _ResultPanel(
+                    snapshot: snapshot,
+                    currentIndex: _currentCommandIndex(snapshot),
+                    onCommandTap: (index) {
+                      final total = snapshot?.commands.length ?? 0;
+                      if (total == 0) return;
+                      _pause();
+                      setState(() => _playbackProgress = (index + 1) / total);
+                    },
+                  );
+
+                  if (constraints.maxWidth >= 720) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(flex: 3, child: canvas),
+                        const SizedBox(width: 16),
+                        SizedBox(width: 360, child: results),
+                      ],
+                    );
+                  }
+
+                  final canvasHeight = (constraints.maxHeight * 0.58)
+                      .clamp(280.0, 420.0)
+                      .toDouble();
+                  return ListView(
+                    children: [
+                      SizedBox(height: canvasHeight, child: canvas),
+                      const SizedBox(height: 16),
+                      SizedBox(height: 420, child: results),
+                    ],
+                  );
+                },
               ),
             ),
           ],
