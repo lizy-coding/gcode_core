@@ -23,7 +23,9 @@ successful cross-compile alone.
 ## Current platform contract
 
 - macOS: primary validated GPU platform.
-- Android: host and APK build are present; runtime GPU/device evidence is pending.
+- Android: API 29+ and ARM64-only. The host and APK build are present; runtime
+  GPU/device evidence is pending. Do not add ARM32 or x86 compatibility without
+  an explicit product decision.
 - iOS, Linux, Windows: not supported until hosts, builds, and native evidence land.
 - Web: unsupported while `dart:io` and the GPU-only renderer remain unconditional.
 
@@ -46,7 +48,8 @@ initialization, screenshots, and frame/memory measurements.
 1. Pure unit tests for parser, bounds, builders, and viewport math.
 2. Controller tests for loading, playback, replay, seeking, and disposal.
 3. Widget tests at 320, 600, 720, and desktop widths.
-4. Android emulator integration tests for picker cancellation and sample load.
+4. Android ARM64 API 29 and API 35 integration tests for picker cancellation
+   and sample load. Do not use x86/x86_64 emulator evidence.
 5. Native GPU profile runs using `gpu_validation.dart`.
 6. Add iOS/Windows/Linux build jobs only with their corresponding host changes.
 
@@ -62,7 +65,7 @@ Run Android builds from `example`, not the package root:
 
 ```sh
 cd example
-flutter build apk --debug
+flutter build apk --debug --target-platform android-arm64
 ```
 
 macOS uses its checked compatibility entrypoint:

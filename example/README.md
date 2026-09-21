@@ -33,10 +33,17 @@ Run it from this directory:
 flutter run
 ```
 
-Android build verification runs from this directory:
+Android support is intentionally limited to API 29+ on `arm64-v8a`. Build
+verification runs from this directory:
 
 ```sh
-flutter build apk --debug
+flutter build apk --debug --target-platform android-arm64
+```
+
+For Play distribution, keep the same ABI contract:
+
+```sh
+flutter build appbundle --release --target-platform android-arm64
 ```
 # macOS 本机构建兼容入口
 

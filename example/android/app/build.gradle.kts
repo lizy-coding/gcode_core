@@ -19,8 +19,14 @@ android {
         applicationId = "com.example.example"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Flutter GPU/Impeller is the product baseline; older Android versions
+        // and non-ARM64 devices are intentionally outside the support contract.
+        minSdk = 29
         targetSdk = flutter.targetSdkVersion
+        ndk {
+            abiFilters.clear()
+            abiFilters += "arm64-v8a"
+        }
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
         // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`

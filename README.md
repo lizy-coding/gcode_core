@@ -96,8 +96,9 @@ flutter test
 ```
 
 CI keeps separate quality, Android build, macOS build, and platform-contract
-jobs. Android currently has build evidence; native GPU runtime acceptance is
-still pending. iOS, Linux, Windows, and Web are intentionally not declared as
+jobs. Android is deliberately constrained to API 29+ and `arm64-v8a`; it
+currently has build evidence, while native GPU runtime acceptance is still
+pending. iOS, Linux, Windows, and Web are intentionally not declared as
 supported hosts yet. See `AGENTS.md` for the evidence required when adding a
 platform and the preferred order for growing tests.
 
