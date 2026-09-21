@@ -45,8 +45,14 @@ jobs:
           java-version: 17
       - run: flutter pub get
         working-directory: example
-      - run: flutter build apk --debug
+      - run: flutter build apk --debug --target-platform android-arm64
         working-directory: example
+      - name: Verify API and ABI contract in APK
+        working-directory: example
+        run: |
+          apk=build/app/outputs/flutter-apk/app-debug.apk
+          test "$(apkanalyzer manifest min-sdk "$apk")" = "29"
+          test "$(unzip -Z1 "$apk" | awk -F/ '/^lib\// {print $2}' | sort -u)" = "arm64-v8a"
 
   macos:
     name: macOS release build
@@ -77,3 +83,5 @@ jobs:
           test ! -d example/ios
           test ! -d example/linux
           test ! -d example/windows
+          grep -F 'minSdk = 29' example/android/app/build.gradle.kts
+          grep -F 'abiFilters += "arm64-v8a"' example/android/app/build.gradle.kts
