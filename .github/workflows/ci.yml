@@ -51,7 +51,9 @@ jobs:
         working-directory: example
         run: |
           apk=build/app/outputs/flutter-apk/app-debug.apk
-          test "$(apkanalyzer manifest min-sdk "$apk")" = "29"
+          apkanalyzer="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/apkanalyzer"
+          test -x "$apkanalyzer"
+          test "$("$apkanalyzer" manifest min-sdk "$apk")" = "29"
           test "$(unzip -Z1 "$apk" | awk -F/ '/^lib\// {print $2}' | sort -u)" = "arm64-v8a"
 
   macos:
