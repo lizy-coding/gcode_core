@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/gcode_command.dart';
 import '../parser/gcode_parse_result.dart';
 
-class CommandTimeline extends StatelessWidget {
+class CommandTimeline extends StatefulWidget {
   const CommandTimeline({
     super.key,
     required this.commands,
@@ -20,12 +20,33 @@ class CommandTimeline extends StatelessWidget {
   final double? maxHeight;
 
   @override
-  Widget build(BuildContext context) {
-    final items = _buildTimelineItems();
+  State<CommandTimeline> createState() => _CommandTimelineState();
+}
 
+class _CommandTimelineState extends State<CommandTimeline> {
+  late List<_TimelineItem> _items;
+
+  @override
+  void initState() {
+    super.initState();
+    _items = _buildTimelineItems();
+  }
+
+  @override
+  void didUpdateWidget(covariant CommandTimeline oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(widget.commands, oldWidget.commands) ||
+        !identical(widget.errors, oldWidget.errors)) {
+      _items = _buildTimelineItems();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      constraints:
-          maxHeight != null ? BoxConstraints(maxHeight: maxHeight!) : null,
+      constraints: widget.maxHeight != null
+          ? BoxConstraints(maxHeight: widget.maxHeight!)
+          : null,
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
         borderRadius: BorderRadius.circular(8),
@@ -39,12 +60,12 @@ class CommandTimeline extends StatelessWidget {
             child: Row(
               children: [
                 Text(
-                  '指令列表 (${commands.length})',
+                  '指令列表 (${widget.commands.length})',
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                 ),
-                if (errors.isNotEmpty)
+                if (widget.errors.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(left: 8),
                     child: Container(
@@ -55,7 +76,7 @@ class CommandTimeline extends StatelessWidget {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        '${errors.length} 错误',
+                        '${widget.errors.length} 错误',
                         style: const TextStyle(
                           fontSize: 11,
                           color: Colors.red,
@@ -71,20 +92,20 @@ class CommandTimeline extends StatelessWidget {
           Flexible(
             child: ListView.builder(
               shrinkWrap: true,
-              itemCount: items.length,
+              itemCount: _items.length,
               itemBuilder: (context, index) {
-                final item = items[index];
+                final item = _items[index];
                 final cmd = item.command;
                 final error = item.error;
-                final commandIndex = cmd == null ? -1 : commands.indexOf(cmd);
+                final commandIndex = item.commandIndex;
                 final isCurrent =
-                    commandIndex >= 0 && commandIndex == currentIndex;
+                    commandIndex >= 0 && commandIndex == widget.currentIndex;
                 final hasError = error != null;
                 final code = cmd?.code;
 
                 return InkWell(
-                  onTap: onTap != null && commandIndex >= 0
-                      ? () => onTap!(commandIndex)
+                  onTap: widget.onTap != null && commandIndex >= 0
+                      ? () => widget.onTap!(commandIndex)
                       : null,
                   child: Container(
                     padding:
@@ -179,8 +200,9 @@ class CommandTimeline extends StatelessWidget {
 
   List<_TimelineItem> _buildTimelineItems() {
     final items = <_TimelineItem>[
-      for (final command in commands) _TimelineItem.command(command),
-      for (final error in errors) _TimelineItem.error(error),
+      for (final (index, command) in widget.commands.indexed)
+        _TimelineItem.command(command, index),
+      for (final error in widget.errors) _TimelineItem.error(error),
     ];
     items.sort((a, b) => a.lineNumber.compareTo(b.lineNumber));
     return items;
@@ -193,12 +215,15 @@ class _TimelineItem {
     required this.rawLine,
     this.command,
     this.error,
+    this.commandIndex = -1,
   });
 
-  factory _TimelineItem.command(GcodeCommand command) => _TimelineItem._(
+  factory _TimelineItem.command(GcodeCommand command, int commandIndex) =>
+      _TimelineItem._(
         lineNumber: command.lineNumber,
         rawLine: command.rawLine,
         command: command,
+        commandIndex: commandIndex,
       );
 
   factory _TimelineItem.error(GcodeParseError error) => _TimelineItem._(
@@ -211,4 +236,5 @@ class _TimelineItem {
   final String rawLine;
   final GcodeCommand? command;
   final GcodeParseError? error;
+  final int commandIndex;
 }

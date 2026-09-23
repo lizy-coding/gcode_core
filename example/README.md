@@ -13,21 +13,17 @@ It demonstrates the full local workflow:
 - Show commands and parse errors with `CommandTimeline`.
 - Preview the generated path with `PlaybackControls`.
 
-The main integration points are:
+The example keeps state and platform access in `GcodeSessionController`, while
+the page only composes adaptive widgets. The main integration points are:
 
 ```dart
-final pipeline = GcodeReadlinePipeline(
-  options: const GcodeReadlineOptions(snapshotBatchSize: 1),
-);
-
-await for (final snapshot in pipeline.load(FileGcodeLineReader(file.path))) {
-  setState(() => _snapshot = snapshot);
-}
+final controller = GcodeSessionController();
+await controller.loadSample();
 
 GcodeCanvas(
-  segments: snapshot.segments,
-  progress: playbackProgress,
-  errorCount: snapshot.errors.length,
+  segments: controller.snapshot?.segments ?? const [],
+  progress: controller.playbackProgress.value,
+  errorCount: controller.snapshot?.errors.length ?? 0,
 );
 ```
 
@@ -35,6 +31,19 @@ Run it from this directory:
 
 ```bash
 flutter run
+```
+
+Android support is intentionally limited to API 29+ on `arm64-v8a`. Build
+verification runs from this directory:
+
+```sh
+flutter build apk --debug --target-platform android-arm64
+```
+
+For Play distribution, keep the same ABI contract:
+
+```sh
+flutter build appbundle --release --target-platform android-arm64
 ```
 # macOS 本机构建兼容入口
 

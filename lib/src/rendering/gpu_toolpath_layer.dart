@@ -87,10 +87,12 @@ class _GpuResources {
         gpu.gpuContext.createDeviceBufferWithCopy(ByteData.sublistView(data)),
         offsetInBytes: 0,
         lengthInBytes: data.lengthInBytes);
+    host = gpu.gpuContext.createHostBuffer();
   }
   final gpu.RenderPipeline pipeline;
   final gpu.RenderPipeline guides;
   late final gpu.BufferView quad;
+  late final gpu.HostBuffer host;
   ToolpathViewport? viewport;
   GcodeBounds? suppliedBounds;
   gpu.GpuImageSurface? surface;
@@ -104,6 +106,12 @@ class _GpuResources {
     surface = null;
     vertices = null;
     segments = null;
+    viewport = null;
+    suppliedBounds = null;
+    bounds = null;
+    size = null;
+    width = null;
+    vertexCount = 0;
   }
 
   void prepare(GpuToolpathLayer input, Size newSize, double dpr) {
@@ -220,7 +228,7 @@ class _GpuImageCompositor extends CustomPainter {
           gpu.ColorAttachment(texture: frame.colorTexture)));
       pass.setColorBlendEnable(true);
       pass.setColorBlendEquation(gpu.ColorBlendEquation());
-      final host = gpu.gpuContext.createHostBuffer();
+      final host = resources.host..reset();
       _drawGuides(pass, host, size, 0);
       if (resources.vertexCount > 0) {
         pass.clearBindings();
@@ -282,5 +290,12 @@ class _GpuImageCompositor extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _GpuImageCompositor oldDelegate) => true;
+  bool shouldRepaint(covariant _GpuImageCompositor oldDelegate) {
+    return !identical(resources, oldDelegate.resources) ||
+        !identical(input.segments, oldDelegate.input.segments) ||
+        input.bounds != oldDelegate.input.bounds ||
+        input.progress != oldDelegate.input.progress ||
+        input.style != oldDelegate.input.style ||
+        dpr != oldDelegate.dpr;
+  }
 }

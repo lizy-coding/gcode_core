@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0 — 2026-09-23
+
+First stable package release. It promotes the Flutter GPU renderer from the
+macOS prerelease and adds the Android API 29+ ARM64 host contract, adaptive
+example UI, session-controller extraction, and CI coverage for package tests,
+Android builds, macOS builds, and declared platform support.
+
+### Platform support
+
+- macOS: Flutter GPU runtime baseline validated.
+- Android: API 29+ ARM64 host, build, and physical-device runtime validated.
+- Web, Windows, Linux, and iOS: not supported by the GPU renderer in this
+  release.
+
 ## 0.2.0-dev.1 — 2026-09-06
 
 First macOS prerelease, distributed by Git tag / GitHub Release.
