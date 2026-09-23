@@ -1,0 +1,10 @@
+.github/
+.agents/
+.codex/
+build/
+docs/
+AGENTS.md
+AI_ANALYSIS.md
+CONTEXT.md
+OWNERS.md
+PHASE_SUMMARY.md

@@ -2,23 +2,37 @@
 
 ![example](https://github.com/lizy-coding/gcode_core/blob/master/gcode_print.gif)
 
-G-code parsing and visualization package extracted for Flutter Forge.
+G-code parsing, streaming toolpath construction, playback UI, and Flutter GPU
+visualization for Flutter applications.
 
-## First macOS prerelease: 0.2.0-dev.1
+## Install
 
-This release is distributed through GitHub/Git, not pub.dev. Pin the release tag
-instead of following `dev`:
+Version 0.2.0 is published on pub.dev:
 
 ```yaml
 dependencies:
-  gcode_core:
-    git:
-      url: https://github.com/lizy-coding/gcode_core.git
-      ref: v0.2.0-dev.1
+  gcode_core: ^0.2.0
 ```
 
-See [release notes](docs/releases/0.2.0-dev.1.md) and
-[CHANGELOG](CHANGELOG.md) for breaking changes and validation limits.
+Flutter 3.47.2 or newer is required. The package bundles its compiled shader
+asset; consumers do not need to copy shader files manually.
+
+## Platform support
+
+| Platform | Status | Requirements |
+| --- | --- | --- |
+| macOS | Supported | macOS 12+, Impeller and Flutter GPU enabled |
+| Android | Supported | API 29+, ARM64, Impeller and Flutter GPU enabled |
+| iOS | Not supported | No validated host contract in 0.2.0 |
+| Windows | Not supported | Flutter GPU renderer is not admitted in 0.2.0 |
+| Linux | Not supported | No validated host contract in 0.2.0 |
+| Web | Not supported | The renderer and file reader use native-only APIs |
+
+Unsupported platforms do not imply that parsing concepts are platform-specific;
+the published package as a whole includes a GPU-only Flutter renderer and is
+released only against the hosts listed as supported.
+
+### Host configuration
 
 For a macOS host, use Flutter 3.47.2 and add these keys to the top-level dict in
 `macos/Runner/Info.plist`:
@@ -30,11 +44,11 @@ For a macOS host, use Flutter 3.47.2 and add these keys to the top-level dict in
 <true/>
 ```
 
-The host needs a macOS deployment target of at least 12.0; runtime evidence is
-currently limited to macOS 26.5 on Apple Silicon. The package bundles its shader
-asset automatically. Example Xcode/CocoaPods workarounds do not propagate into
-consumer apps and should only be adopted if the same build issue occurs.
-This is a Flutter package; its public entry point is not a pure Dart CLI API.
+The macOS deployment target must be at least 12.0. On Android, use a minimum SDK
+of 29, build for `arm64-v8a`, and keep Impeller enabled. The example project is
+the reference host configuration for both platforms. Example Xcode/CocoaPods
+workarounds do not propagate into consumer apps and should only be adopted if
+the same build issue occurs.
 
 ## Scope
 
@@ -53,7 +67,8 @@ Flutter 3.47.2 or newer is required. `GcodeCanvas` is GPU-only: G0 dashes,
 G1 lines, background paths, playback, grid, origin, tool head and glow are all
 rendered by GPU shaders. There is no Canvas backend or automatic fallback.
 Flutter only composites the resulting image and displays ordinary UI widgets.
-Only macOS has been exercised in this implementation phase.
+The renderer has no Canvas fallback. Unsupported GPU initialization is surfaced
+as an error so applications can provide an explicit unavailable state.
 
 ```dart
 GcodeCanvas(
@@ -88,7 +103,7 @@ fields (`toolHeadColor`, `toolHeadGlowColor`, `originDotColor`), replacing Paint
 objects. Unsupported GPU initialization is reported as an error, never a
 fallback renderer.
 
-## Test
+## Validation
 
 ```bash
 flutter test
@@ -96,11 +111,10 @@ flutter test
 ```
 
 CI keeps separate quality, Android build, macOS build, and platform-contract
-jobs. Android is deliberately constrained to API 29+ and `arm64-v8a`; it
-currently has build evidence, while native GPU runtime acceptance is still
-pending. iOS, Linux, Windows, and Web are intentionally not declared as
-supported hosts yet. See `AGENTS.md` for the evidence required when adding a
-platform and the preferred order for growing tests.
+jobs. Android is deliberately constrained to API 29+ and `arm64-v8a`. Native
+acceptance evidence remains platform-specific; adding a new host requires its
+own build, runtime, rendering, lifecycle, and performance evidence. See
+`AGENTS.md` for the admission contract.
 
 ## Example
 
@@ -109,6 +123,8 @@ Run the Flutter example app:
 ```bash
 cd example
 flutter run -d macos
+# or an API 29+ ARM64 Android device
+flutter run -d <android-device-id>
 ```
 
 IDE runs use `example/lib/main.dart` with the macOS device. The example's
@@ -144,3 +160,7 @@ G1 X10 Y10
   }
 }
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
