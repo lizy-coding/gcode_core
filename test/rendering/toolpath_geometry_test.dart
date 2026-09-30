@@ -39,6 +39,40 @@ void main() {
     expect(geometry.vertices.every((v) => v.isFinite), isTrue);
     expect(geometry.vertices[5], 1); // Original segment position is retained.
     expect(geometry.vertices[6], 1); // G0 style survives geometry conversion.
+    expect(geometry.prefixVertexCounts, [0, 0, 6]);
+    expect(
+        ToolpathGeometry.foregroundVertexCount(
+            geometry.prefixVertexCounts, 0.5),
+        0);
+    expect(
+        ToolpathGeometry.foregroundVertexCount(
+            geometry.prefixVertexCounts, 0.75),
+        6);
+  });
+  test('playback only submits vertices through the active segment', () {
+    final segments = [
+      segment(0, 0, 10, 0),
+      segment(10, 0, 20, 0),
+      segment(20, 0, 30, 0),
+    ];
+    final geometry = ToolpathGeometry.build(
+        segments,
+        const GcodeBounds(minX: 0, maxX: 30, minY: 0, maxY: 0),
+        const Size(200, 200),
+        3);
+    expect(geometry.prefixVertexCounts, [0, 6, 12, 18]);
+    for (final (progress, count) in <(double, int)>[
+      (0, 0),
+      (0.1, 6),
+      (1 / 3, 6),
+      (0.5, 12),
+      (1, 18),
+    ]) {
+      expect(
+          ToolpathGeometry.foregroundVertexCount(
+              geometry.prefixVertexCounts, progress),
+          count);
+    }
   });
   test('a viewport smaller than padding has no geometry', () {
     expect(
