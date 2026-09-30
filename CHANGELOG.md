@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — 2026-09-30
+
+- Enable Flutter GPU explicitly in the Android example host.
+- Reduce playback draw work by submitting foreground vertices only through the active segment.
+- Add regression coverage for playback vertex counts.
+- Document Android GPU host configuration.
+- macOS and Android manual acceptance confirmed by the maintainer for this release.
+
 ## 0.2.0 — 2026-09-23
 
 First stable package release. It promotes the Flutter GPU renderer from the
