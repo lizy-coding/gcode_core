@@ -23,8 +23,9 @@ successful cross-compile alone.
 ## Current platform contract
 
 - macOS: primary validated GPU platform.
-- Android: API 29+ and ARM64-only. The host and APK build are present; runtime
-  GPU/device evidence is pending. Do not add ARM32 or x86 compatibility without
+- Android: API 29+ and ARM64-only. The host and APK build are present; macOS and Android manual acceptance
+  was confirmed by the maintainer for 0.2.1. Detailed device evidence is not
+  attached to that confirmation. Do not add ARM32 or x86 compatibility without
   an explicit product decision.
 - iOS, Linux, Windows: not supported until hosts, builds, and native evidence land.
 - Web: unsupported while `dart:io` and the GPU-only renderer remain unconditional.

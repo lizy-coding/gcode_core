@@ -7,11 +7,11 @@ visualization for Flutter applications.
 
 ## Install
 
-Version 0.2.0 is published on pub.dev:
+Install version 0.2.1 from pub.dev:
 
 ```yaml
 dependencies:
-  gcode_core: ^0.2.0
+  gcode_core: ^0.2.1
 ```
 
 Flutter 3.47.2 or newer is required. The package bundles its compiled shader
@@ -23,9 +23,9 @@ asset; consumers do not need to copy shader files manually.
 | --- | --- | --- |
 | macOS | Supported | macOS 12+, Impeller and Flutter GPU enabled |
 | Android | Supported | API 29+, ARM64, Impeller and Flutter GPU enabled |
-| iOS | Not supported | No validated host contract in 0.2.0 |
-| Windows | Not supported | Flutter GPU renderer is not admitted in 0.2.0 |
-| Linux | Not supported | No validated host contract in 0.2.0 |
+| iOS | Not supported | No validated host contract in 0.2.1 |
+| Windows | Not supported | Flutter GPU renderer is not admitted in 0.2.1 |
+| Linux | Not supported | No validated host contract in 0.2.1 |
 | Web | Not supported | The renderer and file reader use native-only APIs |
 
 Unsupported platforms do not imply that parsing concepts are platform-specific;
@@ -46,7 +46,16 @@ For a macOS host, use Flutter 3.47.2 and add these keys to the top-level dict in
 
 The macOS deployment target must be at least 12.0. On Android, use a minimum SDK
 of 29, build for `arm64-v8a`, and keep Impeller enabled. The example project is
-the reference host configuration for both platforms. Example Xcode/CocoaPods
+the reference host configuration for both platforms. Add the following metadata
+inside the Android host application element:
+
+```xml
+<meta-data
+    android:name="io.flutter.embedding.android.EnableFlutterGPU"
+    android:value="true" />
+```
+
+Example Xcode/CocoaPods
 workarounds do not propagate into consumer apps and should only be adopted if
 the same build issue occurs.
 

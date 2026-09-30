@@ -56,13 +56,20 @@ class _GpuToolpathLayerState extends State<GpuToolpathLayer> {
     if (error != null) return;
     debugPrint('GCODE_GPU_RENDER_FAILED $failure');
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => error = failure);
+      if (mounted) {
+        resources?.clear();
+        setState(() {
+          resources = null;
+          error = failure;
+        });
+      }
     });
   }
 
   @override
   void dispose() {
     resources?.clear();
+    resources = null;
     super.dispose();
   }
 
@@ -87,7 +94,8 @@ class _GpuResources {
         gpu.gpuContext.createDeviceBufferWithCopy(ByteData.sublistView(data)),
         offsetInBytes: 0,
         lengthInBytes: data.lengthInBytes);
-    host = gpu.gpuContext.createHostBuffer();
+    // Five small uniforms per frame; four rotating blocks are enough.
+    host = gpu.gpuContext.createHostBuffer(blockLengthInBytes: 16 * 1024);
   }
   final gpu.RenderPipeline pipeline;
   final gpu.RenderPipeline guides;
@@ -102,6 +110,7 @@ class _GpuResources {
   Size? size;
   double? width;
   int vertexCount = 0;
+  List<int> prefixVertexCounts = const [0];
   void clear() {
     surface = null;
     vertices = null;
@@ -112,6 +121,7 @@ class _GpuResources {
     size = null;
     width = null;
     vertexCount = 0;
+    prefixVertexCounts = const [0];
   }
 
   void prepare(GpuToolpathLayer input, Size newSize, double dpr) {
@@ -132,16 +142,17 @@ class _GpuResources {
     }
     if (changed || size != newSize || width != maxWidth) {
       viewport = ToolpathViewport(bounds!, newSize);
-      final geometry =
+      final nextGeometry =
           ToolpathGeometry.build(input.segments, bounds!, newSize, maxWidth);
-      vertexCount = geometry.vertexCount;
+      vertexCount = nextGeometry.vertexCount;
       vertices = vertexCount == 0
           ? null
           : gpu.BufferView(
               gpu.gpuContext.createDeviceBufferWithCopy(
-                  ByteData.sublistView(geometry.vertices)),
+                  ByteData.sublistView(nextGeometry.vertices)),
               offsetInBytes: 0,
-              lengthInBytes: geometry.vertices.lengthInBytes);
+              lengthInBytes: nextGeometry.vertices.lengthInBytes);
+      prefixVertexCounts = nextGeometry.prefixVertexCounts;
       segments = input.segments;
       size = newSize;
       width = maxWidth;
@@ -245,6 +256,11 @@ class _GpuImageCompositor extends CustomPainter {
             resources.pipeline.fragmentShader.getUniformSlot('PaintInfo');
         final style = input.style;
         for (final layer in [0.0, 1.0]) {
+          final drawCount = layer == 0.0
+              ? resources.vertexCount
+              : ToolpathGeometry.foregroundVertexCount(
+                  resources.prefixVertexCounts, input.progress);
+          if (drawCount == 0) continue;
           pass.bindUniform(
               fragmentSlot,
               _uniform(host, fragmentSlot, {
@@ -266,7 +282,7 @@ class _GpuImageCompositor extends CustomPainter {
                   style.linearBackground.width
                 ],
               }));
-          pass.draw(resources.vertexCount);
+          pass.draw(drawCount);
         }
       }
       _drawGuides(pass, host, size, 1);
