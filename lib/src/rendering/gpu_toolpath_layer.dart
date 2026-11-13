@@ -18,11 +18,15 @@ class GpuToolpathLayer extends StatefulWidget {
       required this.segments,
       required this.bounds,
       required this.progress,
-      required this.style});
+      required this.style,
+      this.onReady,
+      this.onError});
   final List<ToolpathSegment> segments;
   final GcodeBounds? bounds;
   final double progress;
   final GcodeStyle style;
+  final VoidCallback? onReady;
+  final ValueChanged<Object>? onError;
   @override
   State<GpuToolpathLayer> createState() => _GpuToolpathLayerState();
 }
@@ -30,6 +34,7 @@ class GpuToolpathLayer extends StatefulWidget {
 class _GpuToolpathLayerState extends State<GpuToolpathLayer> {
   _GpuResources? resources;
   Object? error;
+  bool _presented = false;
   @override
   void initState() {
     super.initState();
@@ -48,7 +53,10 @@ class _GpuToolpathLayerState extends State<GpuToolpathLayer> {
       if (mounted) setState(() => resources = _GpuResources(pipeline, guides));
     } catch (e) {
       debugPrint('GCODE_GPU_INIT_FAILED $e');
-      if (mounted) setState(() => error = e);
+      if (mounted) {
+        setState(() => error = e);
+        widget.onError?.call(e);
+      }
     }
   }
 
@@ -62,7 +70,16 @@ class _GpuToolpathLayerState extends State<GpuToolpathLayer> {
           resources = null;
           error = failure;
         });
+        widget.onError?.call(failure);
       }
+    });
+  }
+
+  void _ready() {
+    if (_presented || error != null) return;
+    _presented = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && error == null) widget.onReady?.call();
     });
   }
 
@@ -83,7 +100,7 @@ class _GpuToolpathLayerState extends State<GpuToolpathLayer> {
       return const Center(child: CircularProgressIndicator());
     return CustomPaint(
         painter: _GpuImageCompositor(resources!, widget,
-            MediaQuery.devicePixelRatioOf(context), _failed));
+            MediaQuery.devicePixelRatioOf(context), _failed, _ready));
   }
 }
 
@@ -166,11 +183,13 @@ class _GpuResources {
 }
 
 class _GpuImageCompositor extends CustomPainter {
-  _GpuImageCompositor(this.resources, this.input, this.dpr, this.failed);
+  _GpuImageCompositor(
+      this.resources, this.input, this.dpr, this.failed, this.ready);
   final _GpuResources resources;
   final GpuToolpathLayer input;
   final double dpr;
   final void Function(Object) failed;
+  final VoidCallback ready;
 
   gpu.BufferView _uniform(gpu.HostBuffer host, gpu.UniformSlot slot,
       Map<String, List<double>> values) {
@@ -299,6 +318,7 @@ class _GpuImageCompositor extends CustomPainter {
       } finally {
         image.dispose();
       }
+      ready();
     } catch (e) {
       frame?.discard();
       failed(e);

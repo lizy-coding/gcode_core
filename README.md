@@ -170,6 +170,97 @@ G1 X10 Y10
 }
 ```
 
+Default pipeline loads keep their builder state independent. A supplied
+`toolpathBuilder` instance is exclusive to one active direct load; overlapping
+use throws `StateError`. String and file readers accept CR, LF and CRLF.
+Background loads report invalid timing options through the stream, and
+cancelling their subscription releases the worker. The example cancels an
+active load before replacing it or disposing its controller.
+
+`GcodeCanvas.onReady` reports the first successfully presented GPU frame.
+`onError` reports initialization or later drawing failures. Readiness is not a
+frame-rate or memory-stability guarantee.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Estimated machining time
+
+Use the public package entrypoint. For timing-only consumers, import
+`package:gcode_core/gcode_time.dart`; it does not import Flutter widgets or GPU
+libraries. All timing APIs are also exported by `package:gcode_core/gcode_core.dart`.
+Neither entrypoint requires native plugin initialization for timing.
+
+| Public API | Input | Result |
+| --- | --- | --- |
+| `estimateGcodeTime` | Complete source string | Synchronous `GcodeTimeEstimate` |
+| `estimateGcodeFileTime` | Local UTF-8 file path or file URI | `Future<GcodeTimeEstimate>` |
+| `estimateGcodeStreamTime` | `Stream<String>`, one source line per event | `Future<GcodeTimeEstimate>` |
+| `GcodeTimeEstimator.append` / `snapshot` | Incremental source lines | Immutable timing snapshots |
+
+```dart
+import 'package:gcode_core/gcode_time.dart' as gcode;
+
+Future<void> estimateJob(String filePath) async {
+  const options = gcode.GcodeTimeOptions(pulsePerMm: 1000);
+  final fromText = gcode.estimateGcodeTime(
+    'G0 F600 X10 Y0\nG25 X20 Y0 T1000', options: options,
+  );
+  print(fromText.estimatedSeconds); // 2.00145 seconds, including G0 travel
+
+  final fromFile = await gcode.estimateGcodeFileTime(filePath, options: options);
+  if (fromFile.isComplete) {
+    print(fromFile.estimatedSeconds); // Seconds under the demo model
+  } else {
+    for (final issue in fromFile.issues) {
+      print('Line ${issue.lineNumber}: ${issue.message}');
+    }
+  }
+
+  final fromStream = await gcode.estimateGcodeStreamTime(
+    Stream.fromIterable(['G0 F600 X10', 'G1 F600 X20']), options: options,
+  );
+  print(fromStream.estimatedSeconds); // 2 seconds
+}
+```
+
+All APIs accept the same `GcodeTimeOptions`: `pulsePerMm=1000`,
+`initialXMode=true`, optional `rapidFeedRate` and `markFeedRate` in mm/min.
+Invalid options throw `ArgumentError` (through the Future for async APIs).
+File/encoding and upstream stream errors propagate through the Future; they do
+not return a successful partial estimate. Async APIs consume one subscription
+and release it on completion or failure. Streams must contain one line per event
+and finish before a result can return; upstream cancellation remains with the
+caller. Timing-only imports do not expand the package's declared platform support.
+
+`GcodeTimeEstimator.append` supports incremental estimation. All three readline
+entrypoints accumulate timing during the existing pass and expose `timeEstimate`
+on snapshots. `snapshot.estimatedSeconds` is available only after a successful,
+complete load; the example displays this value. Set `GcodeReadlineOptions.timeOptions`
+to supply actual axis calibration and optional initial G0/G1 feed rates.
+
+The estimator follows the supplied BSL demo model with separate modal G0/G1
+speeds (F in mm/min), modal coordinate lines, G25 movement plus T exposure and
+jump settling, M202 L/H delays in microseconds and N distance in millimetres,
+G102 N pulses/F pulses per second, and G103 T microseconds. Defaults are
+1000 pulses/mm, initial X mode, 200/700 microseconds and 20 mm jump distance.
+G102 subtracts the offset from axis position, retains axis mode, and changes
+motion mode to G0; G103 adds the offset and selects axis/motion mode from O/L.
+G102 O1 homing is excluded, as in the demo. G4 T is milliseconds.
+
+For this package, coordinates accept integers and decimals; G90/G91 are
+supported. Trailing waits and stationary G103 durations count even without a
+visible segment. Parenthesized and trailing semicolon comments are ignored;
+repeated parameters use their last value, matching the renderer parser.
+M2/M3/M5/M200/M201 are recognized but
+add no time; arbitrary M commands are reported as unsupported. Missing speeds,
+missing exposure, invalid parameters or unsupported motion produce line issues
+and a null `estimatedSeconds`; `knownSeconds` is a diagnostic subtotal, not a
+complete duration or guaranteed lower bound. Successful timing can coexist with
+renderer parse errors: rendering still supports only G0/G1 and G90/G91.
+
+This is an active machining estimate, excluding upload, preparation, pauses,
+homing, acceleration and other hardware delays. No empirical correction factors
+or device accuracy claims are introduced. Playback remains a visual preview;
+its progress is not driven by the estimated physical duration.

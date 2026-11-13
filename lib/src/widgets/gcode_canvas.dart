@@ -14,7 +14,9 @@ class GcodeCanvas extends StatelessWidget {
       this.commandCount = 0,
       this.bounds,
       this.style,
-      this.showLegend = true});
+      this.showLegend = true,
+      this.onReady,
+      this.onError});
   final List<ToolpathSegment> segments;
   final double progress;
   final int errorCount;
@@ -22,6 +24,18 @@ class GcodeCanvas extends StatelessWidget {
   final GcodeBounds? bounds;
   final GcodeStyle? style;
   final bool showLegend;
+
+  /// The callback invoked after this mounted scene presents its first GPU frame.
+  ///
+  /// Called once per mounted renderer, after frame composition. Empty scenes
+  /// and scenes too small to draw do not report readiness.
+  final VoidCallback? onReady;
+
+  /// The callback reporting GPU initialization or drawing failures.
+  ///
+  /// Initialization failures prevent [onReady]. Drawing may fail after the
+  /// first frame has been presented. Disposed scenes emit no events.
+  final ValueChanged<Object>? onError;
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +60,9 @@ class GcodeCanvas extends StatelessWidget {
                   progress: progress.isFinite
                       ? progress.clamp(0.0, 1.0).toDouble()
                       : 0.0,
-                  style: effectiveStyle),
+                  style: effectiveStyle,
+                  onReady: onReady,
+                  onError: onError),
               if (showLegend)
                 Positioned(
                     left: 8, bottom: 8, child: _Legend(style: effectiveStyle)),

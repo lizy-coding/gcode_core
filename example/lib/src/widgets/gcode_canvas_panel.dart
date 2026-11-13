@@ -48,15 +48,7 @@ class GcodeCanvasPanel extends StatelessWidget {
               Positioned(
                 left: 12,
                 top: 12,
-                child: _CanvasLegend(
-                  parsing: parsing,
-                  segments: segments.length,
-                  mainSegments: segments
-                      .where(
-                        (segment) => segment.type == GcodeSegmentType.linear,
-                      )
-                      .length,
-                ),
+                child: _CanvasLegend(parsing: parsing, segments: segments),
               ),
             ],
           ),
@@ -77,16 +69,36 @@ class GcodeCanvasPanel extends StatelessWidget {
   }
 }
 
-class _CanvasLegend extends StatelessWidget {
-  const _CanvasLegend({
-    required this.parsing,
-    required this.segments,
-    required this.mainSegments,
-  });
+class _CanvasLegend extends StatefulWidget {
+  const _CanvasLegend({required this.parsing, required this.segments});
 
   final bool parsing;
-  final int segments;
-  final int mainSegments;
+  final List<ToolpathSegment> segments;
+
+  @override
+  State<_CanvasLegend> createState() => _CanvasLegendState();
+}
+
+class _CanvasLegendState extends State<_CanvasLegend> {
+  late int _mainSegments;
+
+  @override
+  void initState() {
+    super.initState();
+    _countSegments();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CanvasLegend oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(widget.segments, oldWidget.segments)) _countSegments();
+  }
+
+  void _countSegments() {
+    _mainSegments = widget.segments
+        .where((segment) => segment.type == GcodeSegmentType.linear)
+        .length;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -104,10 +116,10 @@ class _CanvasLegend extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(parsing ? '动态解析绘制中' : 'GPU 轨迹绘制'),
+              Text(widget.parsing ? '动态解析绘制中' : 'GPU 轨迹绘制'),
               const SizedBox(height: 4),
-              Text('主线段 G1: $mainSegments'),
-              Text('移动段 G0/G1: $segments'),
+              Text('主线段 G1: $_mainSegments'),
+              Text('移动段 G0/G1: ${widget.segments.length}'),
             ],
           ),
         ),

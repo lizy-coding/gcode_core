@@ -46,6 +46,13 @@ initialization, screenshots, and frame/memory measurements.
 ## Change boundaries
 
 - Keep parsing behavior out of widgets.
+- `gcode_time_estimator.dart` owns the independent BSL demo timing model; all
+  loading paths must use the same streaming accumulator. Public timing APIs
+  are exported through `lib/gcode_time.dart` and the main entrypoint; keep the
+  timing-only entrypoint free of Flutter/GPU imports. File/stream APIs own one
+  subscription and propagate read failures instead of returning partial success. Keep timing issues
+  separate from renderer parse errors and never display incomplete totals as
+  full machining time. Timing is not calibrated device or GPU evidence.
 - Keep file-picker calls in the example controller or a platform service.
 - Treat segment lists as immutable; replace the list when geometry changes.
 - Reuse GPU buffers and surfaces across frames. Dispose `ui.Image` handles.

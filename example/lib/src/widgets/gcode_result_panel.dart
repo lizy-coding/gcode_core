@@ -32,6 +32,17 @@ class GcodeResultPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
+        Text(
+          current.stage == GcodeLoadStage.ready
+              ? (current.estimatedSeconds == null
+                    ? '预计加工耗时：不完整'
+                    : '预计加工耗时：${current.estimatedSeconds!.toStringAsFixed(3)} 秒')
+              : '预计加工耗时：等待加载完成',
+        ),
+        for (final issue
+            in current.timeEstimate?.issues ?? const <GcodeTimingIssue>[])
+          Text('估时第 ${issue.lineNumber} 行：${issue.message}'),
+        const SizedBox(height: 16),
         CommandTimeline(
           commands: current.commands,
           errors: current.errors,

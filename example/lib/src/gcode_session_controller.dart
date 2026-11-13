@@ -34,6 +34,12 @@ G2 X40 Y40
   double speedMultiplier = 1;
 
   Timer? _playbackTimer;
+  StreamSubscription<GcodeLoadSnapshot>? _loadSubscription;
+  Completer<void>? _loadDone;
+  Future<void> _loadCancellation = Future<void>.value();
+  List<int> _commandSegmentCounts = const [];
+  List<int> _segmentCommandIndices = const [];
+  int _loadGeneration = 0;
   bool _disposed = false;
 
   Future<void> pickAndParseFile() async {
@@ -58,35 +64,136 @@ G2 X40 Y40
     Stream<GcodeLoadSnapshot> snapshots, {
     required String sourceName,
   }) async {
+    if (_disposed) return;
+    final generation = ++_loadGeneration;
     _playbackTimer?.cancel();
+    try {
+      await _cancelLoad();
+    } catch (error) {
+      if (!_disposed && generation == _loadGeneration) {
+        _loadFailed(error);
+        loading = false;
+        notifyListeners();
+      }
+      return;
+    }
+    if (_disposed || generation != _loadGeneration) return;
     loading = true;
     isPlaying = false;
     this.sourceName = sourceName;
     snapshot = null;
+    _commandSegmentCounts = const [];
+    _segmentCommandIndices = const [];
     status = '正在读取 $sourceName';
     _setPlaybackProgress(1);
     notifyListeners();
+    if (_disposed || generation != _loadGeneration) return;
 
-    await for (final next in snapshots) {
-      if (_disposed) return;
-      snapshot = next;
-      status = next.message;
-      _setPlaybackProgress(1);
-      notifyListeners();
-      if (next.stage == GcodeLoadStage.parsing) {
-        await Future<void>.delayed(const Duration(milliseconds: 16));
+    final done = Completer<void>();
+    _loadDone = done;
+    StreamSubscription<GcodeLoadSnapshot>? subscription;
+    subscription = snapshots.listen(
+      (next) {
+        if (_disposed || generation != _loadGeneration) return;
+        snapshot = next;
+        _mapCommands(next);
+        status = next.message;
+        _setPlaybackProgress(1);
+        notifyListeners();
+        if (next.stage == GcodeLoadStage.parsing) {
+          subscription?.pause(
+            Future<void>.delayed(const Duration(milliseconds: 16)),
+          );
+        }
+      },
+      onError: (Object error, StackTrace stack) {
+        if (!done.isCompleted) done.completeError(error, stack);
+      },
+      onDone: () {
+        if (!done.isCompleted) done.complete();
+      },
+      cancelOnError: true,
+    );
+    _loadSubscription = subscription;
+    try {
+      await done.future;
+    } catch (error) {
+      if (!_disposed && generation == _loadGeneration) _loadFailed(error);
+    } finally {
+      if (!_disposed && generation == _loadGeneration) {
+        try {
+          await _cancelLoad();
+        } catch (error) {
+          if (!_disposed && generation == _loadGeneration) _loadFailed(error);
+        }
+        if (!_disposed && generation == _loadGeneration) {
+          loading = false;
+          notifyListeners();
+        }
       }
     }
+  }
 
-    if (_disposed) return;
-    loading = false;
-    notifyListeners();
+  void _loadFailed(Object error) {
+    final prefix = snapshot;
+    status = '读取失败: $error';
+    snapshot = GcodeLoadSnapshot(
+      stage: GcodeLoadStage.failed,
+      commands: prefix?.commands ?? const [],
+      errors: prefix?.errors ?? const [],
+      segments: prefix?.segments ?? const [],
+      linesRead: prefix?.linesRead ?? 0,
+      message: status,
+      bounds: prefix?.bounds,
+      timeEstimate: prefix?.timeEstimate,
+    );
+  }
+
+  void _mapCommands(GcodeLoadSnapshot next) {
+    final commandIndices = {
+      for (final (index, command) in next.commands.indexed)
+        command.lineNumber: index,
+    };
+    final counts = List<int>.filled(next.commands.length, 0);
+    _segmentCommandIndices = [
+      for (final segment in next.segments)
+        commandIndices[segment.command.lineNumber] ?? -1,
+    ];
+    for (final index in _segmentCommandIndices) {
+      if (index >= 0) counts[index]++;
+    }
+    var cumulative = 0;
+    _commandSegmentCounts = [for (final count in counts) cumulative += count];
+  }
+
+  Future<void> _cancelLoad() {
+    final subscription = _loadSubscription;
+    final done = _loadDone;
+    _loadSubscription = null;
+    _loadDone = null;
+    final cancelled = (subscription?.cancel() ?? Future<void>.value())
+        .whenComplete(() {
+          if (done != null && !done.isCompleted) done.complete();
+        });
+    final cancellation = Future.wait<void>([
+      _loadCancellation,
+      cancelled,
+    ]).then<void>((_) {});
+    _loadCancellation = cancellation.then<void>(
+      (_) {},
+      onError: (Object error) {
+        debugPrint('GCODE_LOAD_CANCEL_FAILED $error');
+      },
+    );
+    return cancellation;
   }
 
   void play() {
     if ((snapshot?.segments.isEmpty ?? true) || loading) return;
     _playbackTimer?.cancel();
-    if (playbackProgress.value >= 1) _setPlaybackProgress(0);
+    _setPlaybackProgress(
+      playbackProgress.value >= 1 ? 0 : playbackProgress.value,
+    );
     isPlaying = true;
     notifyListeners();
     _playbackTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
@@ -122,18 +229,26 @@ G2 X40 Y40
 
   void selectCommand(int index) {
     final total = snapshot?.commands.length ?? 0;
-    if (total == 0) return;
+    if (index < 0 || index >= total) return;
     pause();
-    _setPlaybackProgress((index + 1) / total);
+    final segments = _segmentCommandIndices.length;
+    _setPlaybackProgress(
+      segments == 0 ? 0 : _commandSegmentCounts[index] / segments,
+      selectedCommandIndex: index,
+    );
   }
 
-  void _setPlaybackProgress(double value) {
+  void _setPlaybackProgress(double value, {int? selectedCommandIndex}) {
     final progress = value.clamp(0.0, 1.0).toDouble();
     playbackProgress.value = progress;
-    final count = snapshot?.commands.length ?? 0;
-    final index = count == 0
-        ? -1
-        : (progress * count).ceil().clamp(1, count) - 1;
+    final count = _segmentCommandIndices.length;
+    // At an exact boundary highlight the just-completed motion command.
+    final index =
+        selectedCommandIndex ??
+        (count == 0
+            ? -1
+            : _segmentCommandIndices[(progress * count).ceil().clamp(1, count) -
+                  1]);
     if (currentCommandIndex.value != index) {
       currentCommandIndex.value = index;
     }
@@ -142,6 +257,8 @@ G2 X40 Y40
   @override
   void dispose() {
     _disposed = true;
+    _loadGeneration++;
+    unawaited(_cancelLoad().catchError((Object _) {}));
     _playbackTimer?.cancel();
     playbackProgress.dispose();
     currentCommandIndex.dispose();
