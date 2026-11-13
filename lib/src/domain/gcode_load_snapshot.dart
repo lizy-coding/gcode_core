@@ -3,6 +3,7 @@ import '../models/gcode_command.dart';
 import '../models/toolpath_segment.dart';
 import '../parser/gcode_parse_result.dart';
 import 'gcode_load_stage.dart';
+import '../services/gcode_time_estimator.dart';
 
 class GcodeLoadSnapshot {
   const GcodeLoadSnapshot({
@@ -14,6 +15,7 @@ class GcodeLoadSnapshot {
     this.message = '',
     this.diagnosticMessage = '',
     this.bounds,
+    this.timeEstimate,
   });
 
   factory GcodeLoadSnapshot.empty() {
@@ -34,6 +36,13 @@ class GcodeLoadSnapshot {
   final String message;
   final String diagnosticMessage;
   final GcodeBounds? bounds;
+
+  /// Timing of the source prefix; independent of the renderer parse subset.
+  final GcodeTimeEstimate? timeEstimate;
+
+  /// Full estimated seconds only after a successful, complete load.
+  double? get estimatedSeconds =>
+      stage == GcodeLoadStage.ready ? timeEstimate?.estimatedSeconds : null;
 
   GcodeParseResult toParseResult() {
     return GcodeParseResult(commands: commands, errors: errors);
