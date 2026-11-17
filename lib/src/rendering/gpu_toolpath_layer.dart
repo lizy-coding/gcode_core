@@ -41,6 +41,12 @@ class _GpuToolpathLayerState extends State<GpuToolpathLayer> {
     _initialize();
   }
 
+  @override
+  void didUpdateWidget(covariant GpuToolpathLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.segments, widget.segments)) _presented = false;
+  }
+
   Future<void> _initialize() async {
     try {
       final library = await gpu.ShaderLibrary.fromAsset(
@@ -78,8 +84,13 @@ class _GpuToolpathLayerState extends State<GpuToolpathLayer> {
   void _ready() {
     if (_presented || error != null) return;
     _presented = true;
+    final presentedSegments = widget.segments;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && error == null) widget.onReady?.call();
+      if (mounted &&
+          error == null &&
+          identical(presentedSegments, widget.segments)) {
+        widget.onReady?.call();
+      }
     });
   }
 

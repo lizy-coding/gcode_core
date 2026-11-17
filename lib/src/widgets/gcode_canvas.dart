@@ -27,7 +27,7 @@ class GcodeCanvas extends StatelessWidget {
 
   /// The callback invoked after this mounted scene presents its first GPU frame.
   ///
-  /// Called once per mounted renderer, after frame composition. Empty scenes
+  /// Called once per segment-list version, after frame composition. Empty scenes
   /// and scenes too small to draw do not report readiness.
   final VoidCallback? onReady;
 

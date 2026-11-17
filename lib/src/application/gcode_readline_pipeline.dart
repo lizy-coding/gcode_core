@@ -17,10 +17,19 @@ import '../services/gcode_time_estimator.dart';
 class GcodeReadlineOptions {
   const GcodeReadlineOptions({
     this.snapshotBatchSize = 200,
+    this.previewLimit,
+    this.minimumSnapshotInterval = Duration.zero,
     this.timeOptions = const GcodeTimeOptions(),
   });
 
   final int snapshotBatchSize;
+
+  /// Caps intermediate geometry; terminal snapshots always contain all data.
+  /// Null preserves cumulative snapshots for existing consumers.
+  final int? previewLimit;
+
+  /// Minimum interval for intermediate snapshots; terminal events are immediate.
+  final Duration minimumSnapshotInterval;
 
   /// Axis calibration and initial speeds used by every loading entrypoint.
   final GcodeTimeOptions timeOptions;
@@ -75,6 +84,14 @@ class GcodeReadlinePipeline {
     final estimator = GcodeTimeEstimator(options: options.timeOptions);
     var linesRead = 0;
     var changedSinceSnapshot = 0;
+    final snapshotClock = Stopwatch()..start();
+    final previewLimit = options.previewLimit;
+    if (previewLimit != null && previewLimit < 0) {
+      throw ArgumentError.value(previewLimit, 'previewLimit');
+    }
+    List<GcodeCommand>? previewCommands;
+    List<GcodeParseError>? previewErrors;
+    List<ToolpathSegment>? previewSegments;
 
     builder.reset();
 
@@ -108,14 +125,23 @@ class GcodeReadlinePipeline {
         }
 
         changedSinceSnapshot++;
-        if (changedSinceSnapshot >= options.snapshotBatchSize) {
+        if (changedSinceSnapshot >= options.snapshotBatchSize &&
+            snapshotClock.elapsed >= options.minimumSnapshotInterval) {
+          snapshotClock.reset();
           changedSinceSnapshot = 0;
+          if (previewLimit != null &&
+              linesRead >= previewLimit &&
+              previewSegments == null) {
+            previewCommands = List.unmodifiable(commands.take(previewLimit));
+            previewErrors = List.unmodifiable(errors.take(previewLimit));
+            previewSegments = List.unmodifiable(segments.take(previewLimit));
+          }
           yield _snapshot(
             builder: builder,
             stage: GcodeLoadStage.parsing,
-            commands: commands,
-            errors: errors,
-            segments: segments,
+            commands: previewCommands ?? commands,
+            errors: previewErrors ?? errors,
+            segments: previewSegments ?? segments,
             timeEstimate: estimator.snapshot,
             linesRead: linesRead,
             message: '已读取 $linesRead 行',
@@ -180,11 +206,17 @@ class GcodeReadlinePipeline {
         onExit: receivePort.sendPort,
       );
       var hasTerminalSnapshot = false;
+      SendPort? acknowledge;
       await for (final message in receivePort) {
+        if (message is SendPort) {
+          acknowledge = message;
+          continue;
+        }
         if (message is _IsolateDone) {
           if (!hasTerminalSnapshot) {
             throw StateError(
-                'Background load completed without a final snapshot');
+              'Background load completed without a final snapshot',
+            );
           }
           break;
         }
@@ -204,6 +236,7 @@ class GcodeReadlinePipeline {
         hasTerminalSnapshot = message.stage == GcodeLoadStage.ready ||
             message.stage == GcodeLoadStage.failed;
         yield message;
+        acknowledge?.send(true);
       }
     } finally {
       receivePort.close();
@@ -211,7 +244,7 @@ class GcodeReadlinePipeline {
     }
   }
 
-  static GcodeLoadSnapshot _snapshot({
+  GcodeLoadSnapshot _snapshot({
     required IncrementalToolpathBuilder builder,
     required GcodeLoadStage stage,
     required List<GcodeCommand> commands,
@@ -224,9 +257,21 @@ class GcodeReadlinePipeline {
     final b = builder.bounds;
     return GcodeLoadSnapshot(
       stage: stage,
-      commands: List.unmodifiable(commands),
-      errors: List.unmodifiable(errors),
-      segments: List.unmodifiable(segments),
+      commands: stage == GcodeLoadStage.parsing &&
+              options.previewLimit != null &&
+              linesRead >= options.previewLimit!
+          ? commands
+          : List.unmodifiable(commands),
+      errors: stage == GcodeLoadStage.parsing &&
+              options.previewLimit != null &&
+              linesRead >= options.previewLimit!
+          ? errors
+          : List.unmodifiable(errors),
+      segments: stage == GcodeLoadStage.parsing &&
+              options.previewLimit != null &&
+              linesRead >= options.previewLimit!
+          ? segments
+          : List.unmodifiable(segments),
       timeEstimate: timeEstimate,
       linesRead: linesRead,
       message: message,
@@ -239,6 +284,9 @@ class GcodeReadlinePipeline {
     (String, bool, GcodeReadlineOptions, SendPort) args,
   ) async {
     final (input, isFile, options, sendPort) = args;
+    final acknowledgements = ReceivePort();
+    final iterator = StreamIterator(acknowledgements);
+    sendPort.send(acknowledgements.sendPort);
     try {
       final reader =
           isFile ? FileGcodeLineReader(input) : StringGcodeLineReader(input);
@@ -248,10 +296,14 @@ class GcodeReadlinePipeline {
         options: options,
       ).load(reader)) {
         sendPort.send(snapshot);
+        if (!await iterator.moveNext()) break;
       }
       sendPort.send(const _IsolateDone());
     } catch (error, stackTrace) {
       sendPort.send(_IsolateFailure(error.toString(), stackTrace.toString()));
+    } finally {
+      await iterator.cancel();
+      acknowledgements.close();
     }
   }
 }
