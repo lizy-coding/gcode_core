@@ -39,3 +39,11 @@ migrate_working_dir/
 *.pbjson.dart
 *.pbenum.dart
 *.grpc.dart
+
+# Regenerable workspace caches (including nested packages)
+**/build/
+**/.dart_tool/
+**/.gradle/
+**/.cxx/
+**/__pycache__/
+**/coverage/

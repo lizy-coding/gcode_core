@@ -70,6 +70,31 @@ the same build issue occurs.
 
 This package does not open system file pickers or own app-level playback state.
 
+## Bounded loading previews
+
+Use `GcodeReadlineOptions(previewLimit: 2000,
+minimumSnapshotInterval: Duration(milliseconds: 100))` for bounded intermediate
+snapshots. `previewLimit` is a **source-line cutoff**: commands, segments and
+bounds all describe that prefix. `previewLineLimit` identifies the frozen
+preview; consumers may retain its geometry until a terminal snapshot arrives.
+`commandCount`, `errorCount` and `segmentCount` report full processed totals,
+which may exceed the preview list lengths. Ready and failed snapshots contain
+all processed data. Existing callers retain cumulative snapshots by default.
+
+Timing diagnostics use the same entry-count cap for intermediate snapshots.
+`GcodeTimeEstimate.issueCount` preserves the total and `issuesTruncated` identifies
+partial diagnostic lists. An empty truncated list never makes an incomplete
+estimate complete. `snapshotWithIssueLimit` exposes this behavior to timing-only
+consumers. Background loaders acknowledge each consumed snapshot before the
+worker sends another; cancellation closes the port and stops the worker.
+
+`GcodeCanvas.stats` optionally accepts a stable `GcodeRenderStats` instance. Its
+geometry-build, vertex-upload, frame-composition, surface and resource-set
+counters describe CPU submissions and explicit clearing, **not GPU execution
+time or native memory reclamation**. Progress-only playback should leave geometry
+build and vertex-upload counters unchanged. `onReady` is emitted for each
+segment-list version after successful frame composition.
+
 ## macOS GPU drawing
 
 Flutter 3.47.2 or newer is required. `GcodeCanvas` is GPU-only: G0 dashes,

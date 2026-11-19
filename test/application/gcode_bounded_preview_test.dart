@@ -36,4 +36,77 @@ void main() {
     expect(count, 12);
     await pipeline.loadStringInBackground(source).take(2).drain<void>();
   });
+  for (final background in [false, true]) {
+    test('preview uses one source prefix (background=$background)', () async {
+      final source = [
+        ...List.filled(10, 'G90'),
+        ...List.generate(30, (i) => 'G1 X${i + 1} F600'),
+      ].join('\n');
+      final pipeline = GcodeReadlinePipeline(
+          options: const GcodeReadlineOptions(
+        snapshotBatchSize: 20,
+        previewLimit: 12,
+      ));
+      final snapshots = await (background
+              ? pipeline.loadStringInBackground(source)
+              : pipeline.load(StringGcodeLineReader(source)))
+          .toList();
+      final previews =
+          snapshots.where((s) => s.stage == GcodeLoadStage.parsing).toList();
+      for (final preview in previews) {
+        expect(preview.previewLineLimit, 12);
+        expect(preview.commands.length, 12);
+        expect(preview.segments.length, 2);
+        expect(
+            preview.segments.every((s) => preview.commands
+                .any((c) => c.lineNumber == s.command.lineNumber)),
+            isTrue);
+        expect(preview.bounds!.maxX, 2);
+        expect(preview.commandCount, preview.linesRead);
+        expect(preview.segmentCount, preview.linesRead - 10);
+      }
+      expect(snapshots.last.previewLineLimit, isNull);
+      expect(snapshots.last.segments.length, 30);
+      expect(snapshots.last.bounds!.maxX, 30);
+    });
+
+    test(
+        'timing issues stay bounded and terminal diagnostics are complete (background=$background)',
+        () async {
+      final source = List.filled(1000, 'G2 X1').join('\n');
+      final pipeline = GcodeReadlinePipeline(
+          options: const GcodeReadlineOptions(
+        snapshotBatchSize: 100,
+        previewLimit: 10,
+      ));
+      final snapshots = await (background
+              ? pipeline.loadStringInBackground(source)
+              : pipeline.load(StringGcodeLineReader(source)))
+          .toList();
+      for (final snapshot
+          in snapshots.where((s) => s.stage == GcodeLoadStage.parsing)) {
+        expect(snapshot.errors.length, 10);
+        expect(snapshot.errorCount, snapshot.linesRead);
+        expect(snapshot.timeEstimate!.issues.length, 10);
+        expect(snapshot.timeEstimate!.issueCount, snapshot.linesRead);
+        expect(snapshot.timeEstimate!.issuesTruncated, isTrue);
+        expect(snapshot.timeEstimate!.estimatedSeconds, isNull);
+      }
+      expect(snapshots.last.errors.length, 1000);
+      expect(snapshots.last.timeEstimate!.issues.length, 1000);
+      expect(snapshots.last.timeEstimate!.issuesTruncated, isFalse);
+      expect(snapshots.last.estimatedSeconds, isNull);
+    });
+  }
+
+  test('zero diagnostic preview cannot make an incomplete estimate complete',
+      () {
+    final estimator = GcodeTimeEstimator()..append('G2 X1');
+    final preview = estimator.snapshotWithIssueLimit(0);
+    expect(preview.issues, isEmpty);
+    expect(preview.issueCount, 1);
+    expect(preview.isComplete, isFalse);
+    expect(preview.estimatedSeconds, isNull);
+    expect(() => estimator.snapshotWithIssueLimit(-1), throwsArgumentError);
+  });
 }
