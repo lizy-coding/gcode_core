@@ -155,7 +155,7 @@ void main() {
               widget is FilledButton,
         ),
       );
-      expect(actions, findsNWidgets(2));
+      expect(actions, findsNWidgets(3));
       for (final widget in tester.widgetList(actions)) {
         if (widget is IconButton) expect(widget.onPressed, isNull);
         if (widget is ButtonStyleButton) expect(widget.onPressed, isNull);

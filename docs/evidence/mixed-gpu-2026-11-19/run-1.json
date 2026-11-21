@@ -1,0 +1,249 @@
+{
+  "os": "Version 27.0.1 (Build 26A434)",
+  "dart": "3.13.2 (stable) (Tue Aug 25 01:01:12 2026 -0700) on \"macos_arm64\"",
+  "dpr": 2.0,
+  "canvas": "640x480 logical",
+  "bitmapReady": {
+    "frames": 1,
+    "textures": 0,
+    "textureBytes": 0,
+    "geometryBuilds": 0,
+    "vertexBytes": 0,
+    "surfaceResizes": 0
+  },
+  "mixedReady": {
+    "frames": 1,
+    "textures": 0,
+    "textureBytes": 0,
+    "geometryBuilds": 1,
+    "vertexBytes": 1176,
+    "surfaceResizes": 0
+  },
+  "mixedFirstBitmap": {
+    "frames": 3,
+    "textures": 1,
+    "textureBytes": 104,
+    "geometryBuilds": 1,
+    "vertexBytes": 1176,
+    "surfaceResizes": 0
+  },
+  "mixedAfterSeek": {
+    "frames": 64,
+    "textures": 1,
+    "textureBytes": 104,
+    "geometryBuilds": 1,
+    "vertexBytes": 1176,
+    "surfaceResizes": 0
+  },
+  "largeReady": {
+    "frames": 1,
+    "textures": 0,
+    "textureBytes": 0,
+    "geometryBuilds": 0,
+    "vertexBytes": 0,
+    "surfaceResizes": 0
+  },
+  "largeFirst": {
+    "frames": 2,
+    "textures": 1,
+    "textureBytes": 16777216,
+    "geometryBuilds": 0,
+    "vertexBytes": 0,
+    "surfaceResizes": 0
+  },
+  "largeFirstFrameMs": 18.662,
+  "largeAfterResize": {
+    "frames": 4,
+    "textures": 1,
+    "textureBytes": 16777216,
+    "geometryBuilds": 0,
+    "vertexBytes": 0,
+    "surfaceResizes": 1
+  },
+  "control": {
+    "operations": 3,
+    "updates": 900,
+    "elapsedMs": 15303,
+    "timingSamples": 906,
+    "uiP95Ms": 0.996,
+    "rasterP95Ms": 0.604,
+    "rssSamples": [
+      {
+        "ms": 0,
+        "rss": 176324608,
+        "frames": 0
+      },
+      {
+        "ms": 1000,
+        "rss": 176586752,
+        "frames": 60
+      },
+      {
+        "ms": 2000,
+        "rss": 178487296,
+        "frames": 120
+      },
+      {
+        "ms": 3000,
+        "rss": 178651136,
+        "frames": 180
+      },
+      {
+        "ms": 4000,
+        "rss": 178536448,
+        "frames": 240
+      },
+      {
+        "ms": 5016,
+        "rss": 178896896,
+        "frames": 301
+      },
+      {
+        "ms": 6000,
+        "rss": 178618368,
+        "frames": 360
+      },
+      {
+        "ms": 7000,
+        "rss": 179912704,
+        "frames": 420
+      },
+      {
+        "ms": 8000,
+        "rss": 179519488,
+        "frames": 480
+      },
+      {
+        "ms": 9000,
+        "rss": 179142656,
+        "frames": 540
+      },
+      {
+        "ms": 10000,
+        "rss": 178782208,
+        "frames": 600
+      },
+      {
+        "ms": 11000,
+        "rss": 180060160,
+        "frames": 660
+      },
+      {
+        "ms": 12000,
+        "rss": 179683328,
+        "frames": 720
+      },
+      {
+        "ms": 13000,
+        "rss": 179322880,
+        "frames": 780
+      },
+      {
+        "ms": 14000,
+        "rss": 178946048,
+        "frames": 840
+      }
+    ],
+    "stats": {
+      "frames": 901,
+      "textures": 1,
+      "textureBytes": 104,
+      "geometryBuilds": 1,
+      "vertexBytes": 1176,
+      "surfaceResizes": 0
+    }
+  },
+  "stress": {
+    "operations": 64,
+    "updates": 901,
+    "elapsedMs": 15317,
+    "timingSamples": 904,
+    "uiP95Ms": 2.14,
+    "rasterP95Ms": 0.545,
+    "rssSamples": [
+      {
+        "ms": 0,
+        "rss": 179126272,
+        "frames": 0
+      },
+      {
+        "ms": 1016,
+        "rss": 182042624,
+        "frames": 61
+      },
+      {
+        "ms": 2016,
+        "rss": 183205888,
+        "frames": 121
+      },
+      {
+        "ms": 3016,
+        "rss": 186155008,
+        "frames": 181
+      },
+      {
+        "ms": 4015,
+        "rss": 187269120,
+        "frames": 241
+      },
+      {
+        "ms": 5014,
+        "rss": 190201856,
+        "frames": 301
+      },
+      {
+        "ms": 6014,
+        "rss": 191414272,
+        "frames": 361
+      },
+      {
+        "ms": 7016,
+        "rss": 194347008,
+        "frames": 421
+      },
+      {
+        "ms": 8016,
+        "rss": 195559424,
+        "frames": 481
+      },
+      {
+        "ms": 9016,
+        "rss": 198574080,
+        "frames": 541
+      },
+      {
+        "ms": 10014,
+        "rss": 199802880,
+        "frames": 601
+      },
+      {
+        "ms": 11015,
+        "rss": 202801152,
+        "frames": 661
+      },
+      {
+        "ms": 12014,
+        "rss": 204029952,
+        "frames": 721
+      },
+      {
+        "ms": 13014,
+        "rss": 206946304,
+        "frames": 781
+      },
+      {
+        "ms": 14014,
+        "rss": 216399872,
+        "frames": 841
+      }
+    ],
+    "stats": {
+      "frames": 902,
+      "textures": 1,
+      "textureBytes": 104,
+      "geometryBuilds": 1,
+      "vertexBytes": 1176,
+      "surfaceResizes": 0
+    }
+  }
+}

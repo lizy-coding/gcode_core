@@ -1,5 +1,7 @@
 # gcode_core
 
+Development uses Flutter 3.50.0 stable (Dart 3.14.0), pinned in `.fvmrc` and CI.
+
 ![example](https://github.com/lizy-coding/gcode_core/blob/master/gcode_print.gif)
 
 G-code parsing, streaming toolpath construction, playback UI, and Flutter GPU
@@ -76,7 +78,9 @@ Use `GcodeReadlineOptions(previewLimit: 2000,
 minimumSnapshotInterval: Duration(milliseconds: 100))` for bounded intermediate
 snapshots. `previewLimit` is a **source-line cutoff**: commands, segments and
 bounds all describe that prefix. `previewLineLimit` identifies the frozen
-preview; consumers may retain its geometry until a terminal snapshot arrives.
+preview. Within one load, later snapshots reuse the frozen command, error and
+segment lists. Background loading transfers those lists once and sends progress
+updates until a terminal snapshot arrives.
 `commandCount`, `errorCount` and `segmentCount` report full processed totals,
 which may exceed the preview list lengths. Ready and failed snapshots contain
 all processed data. Existing callers retain cumulative snapshots by default.
@@ -289,3 +293,47 @@ This is an active machining estimate, excluding upload, preparation, pauses,
 homing, acceleration and other hardware delays. No empirical correction factors
 or device accuracy claims are introduced. Playback remains a visual preview;
 its progress is not driven by the estimated physical duration.
+
+## Mixed vector and bitmap playback
+
+Build one immutable scene per project revision and pass it to the canvas on
+each playback tick. Supply operations in machining order and use the same
+machine coordinate system for vector endpoints and bitmap pixel steps.
+
+```dart
+final preview = MachiningPreview([
+  VectorPreviewOperation(outline),
+  BitmapPreviewOperation(exposureBitmap),
+  VectorPreviewOperation(finishingPath),
+]);
+
+// In the playback widget:
+GcodeCanvas.mixed(preview: preview, progress: progress);
+```
+
+By default each vector segment and each bitmap row contributes one playback
+unit. To allocate progress by estimated duration, supply a positive finite
+`weight` in the same time unit for every operation. Within an operation
+progress advances uniformly by segment or scan row. The full vector background
+stays visible. Foregrounds composite in operation order on one GPU surface.
+A scene retains its vector buffer and each displayed raster texture during
+playback and seeking. Resizing rebuilds screen-space path geometry.
+
+For time-based preview playback, create a `PreviewTimeline` once per scene or
+speed configuration and pass elapsed preview time divided by its
+`totalSeconds` to `GcodeCanvas.timed`.
+
+```dart
+final timeline = PreviewTimeline(preview, speeds: PreviewSpeeds());
+GcodeCanvas.timed(
+  timeline: timeline,
+  progress: timeline.totalSeconds == 0 ? 1 : elapsedSeconds / timeline.totalSeconds,
+);
+```
+
+The defaults are 12 machine units/second for G1, 48 for G0, and 120 rows/second
+for exposure bitmaps. Blank rows and hidden travel consume preview time.
+The host can apply a playback multiplier to elapsed time. A timeline with
+zero total seconds can be displayed directly at progress 1. The timed canvas
+derives durations from the speed configuration. The existing mixed canvas
+continues to use operation weights.

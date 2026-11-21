@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-21
+
+- Add GPU exposure-bitmap and mixed toolpath previews with a shared playback timeline.
+- Bound loading preview work and apply backpressure during background parsing.
+- Track GPU render submissions and budget per-frame uniforms.
 
 - Export a timing-only public entrypoint and direct UTF-8 file/line-stream APIs.
 

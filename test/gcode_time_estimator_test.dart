@@ -3,6 +3,23 @@ import 'package:gcode_core/gcode_core.dart';
 
 void main() {
   group('Gcode machining time', () {
+    test('diagnostic counts cannot hide known issues or be negative', () {
+      final issues = estimateGcodeTime('G2 X1').issues;
+      expect(issues, hasLength(1));
+      expect(
+        () => GcodeTimeEstimate(knownSeconds: 1, issues: issues, issueCount: 0),
+        throwsArgumentError,
+      );
+      expect(
+        () => GcodeTimeEstimate(knownSeconds: 1, issues: [], issueCount: -1),
+        throwsArgumentError,
+      );
+      final truncated =
+          GcodeTimeEstimate(knownSeconds: 1, issues: [], issueCount: 1);
+      expect(truncated.issuesTruncated, isTrue);
+      expect(truncated.estimatedSeconds, isNull);
+    });
+
     test(
       'counts G0 and modal lines using independent jump and mark speeds',
       () {

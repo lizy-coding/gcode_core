@@ -53,6 +53,7 @@ void main() {
           .toList();
       final previews =
           snapshots.where((s) => s.stage == GcodeLoadStage.parsing).toList();
+      expect(previews, hasLength(2));
       for (final preview in previews) {
         expect(preview.previewLineLimit, 12);
         expect(preview.commands.length, 12);
@@ -65,6 +66,10 @@ void main() {
         expect(preview.commandCount, preview.linesRead);
         expect(preview.segmentCount, preview.linesRead - 10);
       }
+      expect(previews.last.commands, same(previews.first.commands));
+      expect(previews.last.segments, same(previews.first.segments));
+      expect(previews.last.bounds, same(previews.first.bounds));
+      expect(() => previews.last.segments.clear(), throwsUnsupportedError);
       expect(snapshots.last.previewLineLimit, isNull);
       expect(snapshots.last.segments.length, 30);
       expect(snapshots.last.bounds!.maxX, 30);
@@ -83,9 +88,12 @@ void main() {
               ? pipeline.loadStringInBackground(source)
               : pipeline.load(StringGcodeLineReader(source)))
           .toList();
-      for (final snapshot
-          in snapshots.where((s) => s.stage == GcodeLoadStage.parsing)) {
+      final previews =
+          snapshots.where((s) => s.stage == GcodeLoadStage.parsing).toList();
+      expect(previews, hasLength(10));
+      for (final snapshot in previews) {
         expect(snapshot.errors.length, 10);
+        expect(snapshot.errors, same(previews.first.errors));
         expect(snapshot.errorCount, snapshot.linesRead);
         expect(snapshot.timeEstimate!.issues.length, 10);
         expect(snapshot.timeEstimate!.issueCount, snapshot.linesRead);

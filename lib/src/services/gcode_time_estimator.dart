@@ -43,7 +43,12 @@ class GcodeTimeEstimate {
     required List<GcodeTimingIssue> issues,
     int? issueCount,
   })  : issues = List.unmodifiable(issues),
-        issueCount = issueCount ?? issues.length;
+        issueCount = issueCount ?? issues.length {
+    if (this.issueCount < this.issues.length) {
+      throw ArgumentError.value(
+          issueCount, 'issueCount', 'Cannot be less than the listed issues');
+    }
+  }
 
   /// Subtotal of calculable durations, not a guaranteed lower bound or full time.
   final double knownSeconds;

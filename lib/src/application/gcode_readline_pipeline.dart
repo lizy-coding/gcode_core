@@ -223,6 +223,7 @@ class GcodeReadlinePipeline {
         onExit: receivePort.sendPort,
       );
       var hasTerminalSnapshot = false;
+      GcodeLoadSnapshot? frozenPreview;
       SendPort? acknowledge;
       await for (final message in receivePort) {
         if (message is SendPort) {
@@ -247,12 +248,18 @@ class GcodeReadlinePipeline {
           // Uncaught isolate errors arrive as description/stack trace pairs.
           throw RemoteError(message[0].toString(), message[1].toString());
         }
-        if (message is! GcodeLoadSnapshot) {
+        final GcodeLoadSnapshot snapshot;
+        if (message is _FrozenPreviewUpdate && frozenPreview != null) {
+          snapshot = message.applyTo(frozenPreview);
+        } else if (message is GcodeLoadSnapshot) {
+          snapshot = message;
+          if (snapshot.previewLineLimit != null) frozenPreview = snapshot;
+        } else {
           throw StateError('Unexpected background load message');
         }
-        hasTerminalSnapshot = message.stage == GcodeLoadStage.ready ||
-            message.stage == GcodeLoadStage.failed;
-        yield message;
+        hasTerminalSnapshot = snapshot.stage == GcodeLoadStage.ready ||
+            snapshot.stage == GcodeLoadStage.failed;
+        yield snapshot;
         acknowledge?.send(true);
       }
     } finally {
@@ -308,12 +315,18 @@ class GcodeReadlinePipeline {
     try {
       final reader =
           isFile ? FileGcodeLineReader(input) : StringGcodeLineReader(input);
+      var sentFrozenPreview = false;
       // Reuse one pipeline so timing, bounds and immutable snapshots cannot
       // diverge between direct, file-isolate and string-isolate loading.
       await for (final snapshot in GcodeReadlinePipeline(
         options: options,
       ).load(reader)) {
-        sendPort.send(snapshot);
+        if (snapshot.previewLineLimit != null && sentFrozenPreview) {
+          sendPort.send(_FrozenPreviewUpdate(snapshot));
+        } else {
+          sendPort.send(snapshot);
+          if (snapshot.previewLineLimit != null) sentFrozenPreview = true;
+        }
         if (!await iterator.moveNext()) break;
       }
       sendPort.send(const _IsolateDone());
@@ -324,6 +337,40 @@ class GcodeReadlinePipeline {
       acknowledgements.close();
     }
   }
+}
+
+/// A frozen prefix is transferred once. Later batches carry only changing data.
+class _FrozenPreviewUpdate {
+  _FrozenPreviewUpdate(GcodeLoadSnapshot snapshot)
+      : linesRead = snapshot.linesRead,
+        message = snapshot.message,
+        commandCount = snapshot.commandCount,
+        errorCount = snapshot.errorCount,
+        segmentCount = snapshot.segmentCount,
+        timeEstimate = snapshot.timeEstimate;
+
+  final int linesRead;
+  final String message;
+  final int commandCount;
+  final int errorCount;
+  final int segmentCount;
+  final GcodeTimeEstimate? timeEstimate;
+
+  GcodeLoadSnapshot applyTo(GcodeLoadSnapshot preview) => GcodeLoadSnapshot(
+        stage: GcodeLoadStage.parsing,
+        commands: preview.commands,
+        errors: preview.errors,
+        segments: preview.segments,
+        bounds: preview.bounds,
+        linesRead: linesRead,
+        message: message,
+        diagnosticMessage: preview.diagnosticMessage,
+        previewLineLimit: preview.previewLineLimit,
+        commandCount: commandCount,
+        errorCount: errorCount,
+        segmentCount: segmentCount,
+        timeEstimate: timeEstimate,
+      );
 }
 
 class _IsolateDone {
