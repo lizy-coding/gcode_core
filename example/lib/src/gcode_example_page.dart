@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'gcode_session_controller.dart';
+import 'widgets/bitmap_preview_page.dart';
 import 'widgets/gcode_canvas_panel.dart';
 import 'widgets/gcode_result_panel.dart';
 import 'widgets/gcode_status_bar.dart';
@@ -59,8 +60,20 @@ class _GcodeExamplePageState extends State<GcodeExamplePage> {
   List<Widget> _buildActions(bool compact) {
     final sample = _controller.loading ? null : _controller.loadSample;
     final pick = _controller.loading ? null : _controller.pickAndParseFile;
+    final bitmap = IconButton(
+      tooltip: '位图扫描示意',
+      icon: const Icon(Icons.image_outlined),
+      onPressed: _controller.loading
+          ? null
+          : () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const BitmapPreviewPage(),
+              ),
+            ),
+    );
     if (compact) {
       return [
+        bitmap,
         IconButton(
           onPressed: sample,
           icon: const Icon(Icons.data_object),
@@ -75,6 +88,7 @@ class _GcodeExamplePageState extends State<GcodeExamplePage> {
       ];
     }
     return [
+      bitmap,
       TextButton.icon(
         onPressed: sample,
         icon: const Icon(Icons.data_object),

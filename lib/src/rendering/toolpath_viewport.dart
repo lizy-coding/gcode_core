@@ -30,7 +30,10 @@ class ToolpathViewport {
   }
 
   Offset toolHead(List<ToolpathSegment> segments, double progress) {
-    final position = progress.clamp(0.0, 1.0) * segments.length;
+    return toolHeadAt(segments, progress.clamp(0.0, 1.0) * segments.length);
+  }
+
+  Offset toolHeadAt(List<ToolpathSegment> segments, double position) {
     final index = position.floor().clamp(0, segments.length - 1);
     final t = (position - index).clamp(0.0, 1.0);
     final segment = segments[index];

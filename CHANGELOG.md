@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0 — 2026-11-21
+
+- Add GPU exposure-bitmap and mixed toolpath previews with a shared playback timeline.
+- Bound loading preview work and apply backpressure during background parsing.
+- Track GPU render submissions and budget per-frame uniforms.
+
+- Export a timing-only public entrypoint and direct UTF-8 file/line-stream APIs.
+
+- Add streaming demo-based machining estimates, including G0 travel, G25
+  exposure/jump delay, axis moves and explicit waits.
+- Expose timing and diagnostics in load snapshots and the example result panel.
+- Share the loading pipeline across direct and background entrypoints.
+- Align timing parameter and comment handling with parsing, and restore G0
+  mode after excluded homing commands.
+- Normalize CR/LF/CRLF input and propagate background configuration failures.
+- Isolate concurrent loads and cancel example loads on replacement or disposal.
+- Map command selection to motion segments and cache playback legend counts.
+- Add optional GPU first-frame and failure callbacks for consuming hosts.
+
 ## 0.2.1 — 2026-09-30
 
 - Enable Flutter GPU explicitly in the Android example host.

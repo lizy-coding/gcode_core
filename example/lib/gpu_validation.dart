@@ -9,6 +9,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:gcode_core/gcode_core.dart';
 
+import 'src/gpu_validation_monitor.dart';
+
 void main() => runApp(const MaterialApp(home: Validation()));
 
 class Validation extends StatefulWidget {
@@ -22,6 +24,11 @@ class _ValidationState extends State<Validation>
   final boundary = GlobalKey();
   late final AnimationController controller;
   final timings = <ui.FrameTiming>[];
+  final monitor = GpuValidationMonitor();
+  final memory = <Map<String, int>>[];
+  Timer? memoryTimer;
+  int scene = 0;
+  int presentedScenes = 0;
   List<ToolpathSegment> segments = [];
   double progress = 1;
   bool recording = false;
@@ -52,7 +59,9 @@ class _ValidationState extends State<Validation>
   }
 
   Future<void> capture(String name) async {
+    await monitor.waitForReady();
     await settle();
+    monitor.check();
     final image =
         await (boundary.currentContext!.findRenderObject()!
                 as RenderRepaintBoundary)
@@ -69,7 +78,17 @@ class _ValidationState extends State<Validation>
 
   Future<void> runValidation() async {
     try {
-      output = await Directory.systemTemp.createTemp('gcode-2d-validation-');
+      final destination = Platform.environment['GCODE_GPU_OUTPUT'];
+      output = destination == null
+          ? await Directory.systemTemp.createTemp('gcode-2d-validation-')
+          : await Directory(destination).create(recursive: true);
+      memoryTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        memory.add({
+          'utcMs': DateTime.now().toUtc().millisecondsSinceEpoch,
+          'rssBytes': ProcessInfo.currentRss,
+        });
+      });
+      monitor.beginScene();
       final parsed = GcodeParser().parse(
         'G0 X-20 Y-10\nG1 X20 Y-10\nG1 X20 Y20\nG0 X-20 Y20\nG1 X-20 Y-10',
       );
@@ -88,11 +107,14 @@ class _ValidationState extends State<Validation>
           visible = false;
         });
         await settle();
+        monitor.beginScene();
         setState(() {
           visible = true;
+          scene++;
           width = i.isEven ? 480 : 640;
           segments = List.of(fixture);
         });
+        await monitor.waitForReady();
         await settle();
       }
       await capture('gpu-after-20-reloads');
@@ -107,26 +129,61 @@ class _ValidationState extends State<Validation>
       if (large.length != 10000) {
         throw StateError('Expected 10000 segments, got ${large.length}');
       }
+      monitor.beginScene();
       setState(() {
         segments = large;
+        scene++;
         width = 640;
         status = '实际二维 GPU：10,000 段 · 60 秒播放采样';
       });
+      await monitor.waitForReady();
       controller.repeat();
       await Future<void>.delayed(const Duration(seconds: 5));
       recording = true;
-      await Future<void>.delayed(const Duration(seconds: 60));
+      final seconds =
+          int.tryParse(
+            Platform.environment['GCODE_GPU_SAMPLE_SECONDS'] ?? '',
+          ) ??
+          60;
+      if (seconds <= 0) throw ArgumentError('Sample seconds must be positive');
+      final sampleClock = Stopwatch()..start();
+      await Future<void>.delayed(Duration(seconds: seconds));
+      sampleClock.stop();
       recording = false;
       controller.stop();
+      monitor.check();
+      if (timings.isEmpty) throw StateError('No frame timings were recorded');
+      if (!mounted) throw StateError('Validation view was disposed');
       double p95(List<int> a) {
         a.sort();
         return a.isEmpty ? -1 : a[(a.length * .95).ceil() - 1] / 1000;
       }
 
       final report = {
+        'drawingStatus': 'PASS',
+        'firstFramePresented': monitor.isReady,
+        'presentedScenes': presentedScenes,
+        'os': Platform.operatingSystem,
+        'osVersion': Platform.operatingSystemVersion,
+        'dartVersion': Platform.version,
+        'flutterRevision': Platform.environment['GCODE_FLUTTER_REVISION'],
+        'sourceRevision': Platform.environment['GCODE_SOURCE_REVISION'],
+        'sourceManifestSha256': Platform.environment['GCODE_SOURCE_SHA256'],
+        'artifactManifestSha256': Platform.environment['GCODE_ARTIFACT_SHA256'],
+        'logicalSize': {'width': width, 'height': 480},
+        'devicePixelRatio': MediaQuery.devicePixelRatioOf(context),
         'segments': large.length,
         'frames': timings.length,
-        'seconds': 60,
+        'seconds': seconds,
+        'elapsedSeconds': sampleClock.elapsedMicroseconds / 1000000,
+        'averageSampleFps':
+            timings.length / (sampleClock.elapsedMicroseconds / 1000000),
+        'frameRateStatus': timings.length >= seconds * 55
+            ? 'SAMPLED_REQUIRES_CONTROLLED_REPEATS'
+            : 'INSUFFICIENT_FRAMES',
+        'processMemorySamples': memory,
+        'processMaxRssBytes': ProcessInfo.maxRss,
+        'gpuMemoryStatus': 'UNMEASURED',
         'uiP95Ms': p95(
           timings.map((f) => f.buildDuration.inMicroseconds).toList(),
         ),
@@ -144,20 +201,26 @@ class _ValidationState extends State<Validation>
         'output': output.path,
       };
       await capture('gpu-10000');
+      monitor.check();
       await File(
         '${output.path}/report.json',
       ).writeAsString(jsonEncode(report));
       debugPrint('GPU_2D_RESULT ${jsonEncode(report)}');
-      setState(() => status = '验证完成 · ${timings.length} 帧 / 60 秒');
+      setState(() => status = '验证完成 · ${timings.length} 帧 / $seconds 秒');
+      if (Platform.environment['GCODE_GPU_EXIT_WHEN_DONE'] == '1') exit(0);
     } catch (e, stack) {
       debugPrint('GPU_2D_FAILED $e\n$stack');
-      setState(() => status = '验证失败 $e');
+      if (mounted) setState(() => status = '验证失败 $e');
+      if (Platform.environment['GCODE_GPU_EXIT_WHEN_DONE'] == '1') exit(1);
+    } finally {
+      memoryTimer?.cancel();
     }
   }
 
   @override
   void dispose() {
     SchedulerBinding.instance.removeTimingsCallback(collect);
+    memoryTimer?.cancel();
     controller.dispose();
     super.dispose();
   }
@@ -173,9 +236,15 @@ class _ValidationState extends State<Validation>
           height: 480,
           child: visible
               ? GcodeCanvas(
+                  key: ValueKey(scene),
                   segments: segments,
                   progress: progress,
                   showLegend: false,
+                  onReady: () {
+                    presentedScenes++;
+                    monitor.presented();
+                  },
+                  onError: monitor.failed,
                 )
               : const SizedBox(),
         ),

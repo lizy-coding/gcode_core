@@ -24,6 +24,8 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
+      - name: Pure Dart timing smoke
+        run: dart tool/timing_smoke.dart
       - run: flutter analyze
       - run: flutter test
       - run: flutter test

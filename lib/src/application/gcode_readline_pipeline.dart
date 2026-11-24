@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'dart:isolate';
 
 import '../data/readers/gcode_line_reader.dart';
-import '../domain/gcode_line_record.dart';
+import '../core/gcode_bounds.dart';
+import '../data/readers/file_gcode_line_reader.dart';
+import '../data/readers/string_gcode_line_reader.dart';
 import '../domain/gcode_load_snapshot.dart';
 import '../domain/gcode_load_stage.dart';
 import '../domain/parsed_gcode_line.dart';
@@ -13,35 +13,91 @@ import '../models/toolpath_segment.dart';
 import '../parser/gcode_parse_result.dart';
 import '../parser/gcode_parser.dart';
 import '../services/toolpath_builder.dart';
+import '../services/gcode_time_estimator.dart';
 
 class GcodeReadlineOptions {
   const GcodeReadlineOptions({
     this.snapshotBatchSize = 200,
+    this.previewLimit,
+    this.minimumSnapshotInterval = Duration.zero,
+    this.timeOptions = const GcodeTimeOptions(),
   });
 
   final int snapshotBatchSize;
+
+  /// The source-line limit of intermediate geometry and parser diagnostics.
+  ///
+  /// Timing diagnostic previews are capped to the same number of entries.
+  /// Terminal snapshots contain all data. `null` preserves cumulative snapshots.
+  final int? previewLimit;
+
+  /// Minimum interval for intermediate snapshots; terminal events are immediate.
+  final Duration minimumSnapshotInterval;
+
+  /// Axis calibration and initial speeds used by every loading entrypoint.
+  final GcodeTimeOptions timeOptions;
 }
 
 class GcodeReadlinePipeline {
+  static final _occupiedBuilders = Expando<bool>('loading toolpath builders');
+
+  /// Creates a pipeline for source timing and toolpath loading.
+  ///
+  /// [parser] and [toolpathBuilder] are used by [load]. A supplied builder is
+  /// reset for each load and retained after completion. Concurrent loads using
+  /// that same builder, including through another pipeline, throw [StateError].
+  /// Background entrypoints use their own default parser and builder.
   GcodeReadlinePipeline({
     GcodeParser? parser,
     IncrementalToolpathBuilder? toolpathBuilder,
     this.options = const GcodeReadlineOptions(),
   })  : _parser = parser ?? GcodeParser(),
-        _toolpathBuilder = toolpathBuilder ?? IncrementalToolpathBuilder();
+        _toolpathBuilder = toolpathBuilder;
 
   final GcodeParser _parser;
-  final IncrementalToolpathBuilder _toolpathBuilder;
+  final IncrementalToolpathBuilder? _toolpathBuilder;
   final GcodeReadlineOptions options;
 
+  /// Reads source records and emits immutable loading snapshots.
+  ///
+  /// Default builders are independent for concurrent loads. Cancelling the
+  /// subscription releases the reader and any injected builder's occupancy.
+  /// Invalid timing options produce [ArgumentError] on the stream. Read errors
+  /// produce a failed snapshot whose complete duration is unavailable.
   Stream<GcodeLoadSnapshot> load(GcodeLineReader reader) async* {
+    final injectedBuilder = _toolpathBuilder;
+    if (injectedBuilder != null && _occupiedBuilders[injectedBuilder] == true) {
+      throw StateError('The injected toolpath builder is already loading');
+    }
+    if (injectedBuilder != null) _occupiedBuilders[injectedBuilder] = true;
+    try {
+      yield* _load(reader, injectedBuilder ?? IncrementalToolpathBuilder());
+    } finally {
+      if (injectedBuilder != null) _occupiedBuilders[injectedBuilder] = null;
+    }
+  }
+
+  Stream<GcodeLoadSnapshot> _load(
+    GcodeLineReader reader,
+    IncrementalToolpathBuilder builder,
+  ) async* {
     final commands = <GcodeCommand>[];
     final errors = <GcodeParseError>[];
     final segments = <ToolpathSegment>[];
+    final estimator = GcodeTimeEstimator(options: options.timeOptions);
     var linesRead = 0;
     var changedSinceSnapshot = 0;
+    final snapshotClock = Stopwatch()..start();
+    final previewLimit = options.previewLimit;
+    if (previewLimit != null && previewLimit < 0) {
+      throw ArgumentError.value(previewLimit, 'previewLimit');
+    }
+    List<GcodeCommand>? previewCommands;
+    List<GcodeParseError>? previewErrors;
+    List<ToolpathSegment>? previewSegments;
+    GcodeBounds? previewBounds;
 
-    _toolpathBuilder.reset();
+    builder.reset();
 
     yield const GcodeLoadSnapshot(
       stage: GcodeLoadStage.reading,
@@ -55,248 +111,8 @@ class GcodeReadlinePipeline {
     try {
       await for (final record in reader.readLines()) {
         linesRead = record.lineNumber;
+        estimator.append(record.rawLine, lineNumber: record.lineNumber);
         final parsed = _parser.parseRecord(record);
-
-        switch (parsed.kind) {
-          case ParsedGcodeLineKind.command:
-            final command = parsed.command!;
-            commands.add(command);
-            final segment = _toolpathBuilder.accept(command);
-            if (segment != null) {
-              segments.add(segment);
-            }
-          case ParsedGcodeLineKind.error:
-            errors.add(parsed.error!);
-          case ParsedGcodeLineKind.skipped:
-            break;
-        }
-
-        changedSinceSnapshot++;
-        if (changedSinceSnapshot >= options.snapshotBatchSize) {
-          changedSinceSnapshot = 0;
-          yield _snapshot(
-            stage: GcodeLoadStage.parsing,
-            commands: commands,
-            errors: errors,
-            segments: segments,
-            linesRead: linesRead,
-            message: '已读取 $linesRead 行',
-          );
-        }
-      }
-
-      yield _snapshot(
-        stage: GcodeLoadStage.ready,
-        commands: commands,
-        errors: errors,
-        segments: segments,
-        linesRead: linesRead,
-        message: '逐行读取完成: $linesRead 行, '
-            '${commands.length} 条指令, ${errors.length} 个错误, '
-            '${segments.length} 条轨迹段',
-      );
-    } catch (error) {
-      yield _snapshot(
-        stage: GcodeLoadStage.failed,
-        commands: commands,
-        errors: errors,
-        segments: segments,
-        linesRead: linesRead,
-        message: '读取失败: $error',
-      );
-    }
-  }
-
-  Stream<GcodeLoadSnapshot> loadFileInBackground(String filePath) {
-    final receivePort = ReceivePort();
-
-    Isolate.spawn(
-      _isolateLoadFile,
-      (filePath, options, receivePort.sendPort),
-    );
-
-    return receivePort
-        .takeWhile((msg) => msg is! _IsolateDone)
-        .cast<GcodeLoadSnapshot>();
-  }
-
-  Stream<GcodeLoadSnapshot> loadStringInBackground(String source) {
-    final receivePort = ReceivePort();
-
-    Isolate.spawn(
-      _isolateLoadString,
-      (source, options, receivePort.sendPort),
-    );
-
-    return receivePort
-        .takeWhile((msg) => msg is! _IsolateDone)
-        .cast<GcodeLoadSnapshot>();
-  }
-
-  GcodeLoadSnapshot _snapshot({
-    required GcodeLoadStage stage,
-    required List<GcodeCommand> commands,
-    required List<GcodeParseError> errors,
-    required List<ToolpathSegment> segments,
-    required int linesRead,
-    required String message,
-  }) {
-    final b = _toolpathBuilder.bounds;
-    return GcodeLoadSnapshot(
-      stage: stage,
-      commands: List.unmodifiable(commands),
-      errors: List.unmodifiable(errors),
-      segments: List.unmodifiable(segments),
-      linesRead: linesRead,
-      message: message,
-      bounds:
-          b.minX != 0 || b.maxX != 0 || b.minY != 0 || b.maxY != 0 ? b : null,
-    );
-  }
-
-  static void _isolateLoadFile(
-    (String, GcodeReadlineOptions, SendPort) args,
-  ) {
-    () async {
-      final (filePath, options, sendPort) = args;
-      final parser = GcodeParser();
-      final builder = IncrementalToolpathBuilder();
-
-      final commands = <GcodeCommand>[];
-      final errors = <GcodeParseError>[];
-      final segments = <ToolpathSegment>[];
-      var linesRead = 0;
-      var changedSinceSnapshot = 0;
-
-      try {
-        sendPort.send(
-          const GcodeLoadSnapshot(
-            stage: GcodeLoadStage.reading,
-            commands: [],
-            errors: [],
-            segments: [],
-            linesRead: 0,
-            message: '开始逐行读取',
-          ),
-        );
-
-        final file = File(filePath);
-        final stream = file
-            .openRead()
-            .transform(utf8.decoder)
-            .transform(const LineSplitter());
-
-        await for (final line in stream) {
-          linesRead++;
-          final record = GcodeLineRecord(
-            lineNumber: linesRead,
-            rawLine: line,
-            byteOffset: 0,
-          );
-
-          final parsed = parser.parseRecord(record);
-
-          switch (parsed.kind) {
-            case ParsedGcodeLineKind.command:
-              final command = parsed.command!;
-              commands.add(command);
-              final segment = builder.accept(command);
-              if (segment != null) {
-                segments.add(segment);
-              }
-            case ParsedGcodeLineKind.error:
-              errors.add(parsed.error!);
-            case ParsedGcodeLineKind.skipped:
-              break;
-          }
-
-          changedSinceSnapshot++;
-          if (changedSinceSnapshot >= options.snapshotBatchSize) {
-            changedSinceSnapshot = 0;
-            final b = builder.bounds;
-            sendPort.send(
-              GcodeLoadSnapshot(
-                stage: GcodeLoadStage.parsing,
-                commands: List.unmodifiable(commands),
-                errors: List.unmodifiable(errors),
-                segments: List.unmodifiable(segments),
-                linesRead: linesRead,
-                message: '已读取 $linesRead 行',
-                bounds: b.minX != 0 || b.maxX != 0 || b.minY != 0 || b.maxY != 0
-                    ? b
-                    : null,
-              ),
-            );
-          }
-        }
-
-        final b = builder.bounds;
-        sendPort.send(
-          GcodeLoadSnapshot(
-            stage: GcodeLoadStage.ready,
-            commands: List.unmodifiable(commands),
-            errors: List.unmodifiable(errors),
-            segments: List.unmodifiable(segments),
-            linesRead: linesRead,
-            message: '逐行读取完成: $linesRead 行, '
-                '${commands.length} 条指令, ${errors.length} 个错误, '
-                '${segments.length} 条轨迹段',
-            bounds: b.minX != 0 || b.maxX != 0 || b.minY != 0 || b.maxY != 0
-                ? b
-                : null,
-          ),
-        );
-      } catch (error) {
-        sendPort.send(
-          GcodeLoadSnapshot(
-            stage: GcodeLoadStage.failed,
-            commands: List.unmodifiable(commands),
-            errors: List.unmodifiable(errors),
-            segments: List.unmodifiable(segments),
-            linesRead: linesRead,
-            message: '读取失败: $error',
-          ),
-        );
-      }
-
-      sendPort.send(const _IsolateDone());
-    }();
-  }
-
-  static void _isolateLoadString(
-    (String, GcodeReadlineOptions, SendPort) args,
-  ) {
-    final (source, options, sendPort) = args;
-    final parser = GcodeParser();
-    final builder = IncrementalToolpathBuilder();
-
-    final commands = <GcodeCommand>[];
-    final errors = <GcodeParseError>[];
-    final segments = <ToolpathSegment>[];
-    var linesRead = 0;
-    var changedSinceSnapshot = 0;
-
-    try {
-      sendPort.send(
-        const GcodeLoadSnapshot(
-          stage: GcodeLoadStage.reading,
-          commands: [],
-          errors: [],
-          segments: [],
-          linesRead: 0,
-          message: '开始逐行读取',
-        ),
-      );
-
-      for (final line in const LineSplitter().convert(source)) {
-        linesRead++;
-        final record = GcodeLineRecord(
-          lineNumber: linesRead,
-          rawLine: line,
-          byteOffset: 0,
-        );
-
-        final parsed = parser.parseRecord(record);
 
         switch (parsed.kind) {
           case ParsedGcodeLineKind.command:
@@ -312,59 +128,258 @@ class GcodeReadlinePipeline {
             break;
         }
 
+        if (previewLimit != null &&
+            linesRead >= previewLimit &&
+            previewSegments == null) {
+          previewCommands = List.unmodifiable(
+              commands.takeWhile((c) => c.lineNumber <= previewLimit));
+          previewErrors = List.unmodifiable(
+              errors.takeWhile((e) => e.lineNumber <= previewLimit));
+          previewSegments = List.unmodifiable(
+              segments.takeWhile((s) => s.command.lineNumber <= previewLimit));
+          previewBounds = GcodeBounds.zero;
+          for (final segment in previewSegments) {
+            previewBounds = previewBounds!
+                .expand(segment.start.x, segment.start.y)
+                .expand(segment.end.x, segment.end.y);
+          }
+        }
         changedSinceSnapshot++;
-        if (changedSinceSnapshot >= options.snapshotBatchSize) {
+        if (changedSinceSnapshot >= options.snapshotBatchSize &&
+            snapshotClock.elapsed >= options.minimumSnapshotInterval) {
+          snapshotClock.reset();
           changedSinceSnapshot = 0;
-          final b = builder.bounds;
-          sendPort.send(
-            GcodeLoadSnapshot(
-              stage: GcodeLoadStage.parsing,
-              commands: commands,
-              errors: errors,
-              segments: segments,
-              linesRead: linesRead,
-              message: '已读取 $linesRead 行',
-              bounds: b.minX != 0 || b.maxX != 0 || b.minY != 0 || b.maxY != 0
-                  ? b
-                  : null,
-            ),
+          yield _snapshot(
+            bounds: previewBounds ?? builder.bounds,
+            previewLineLimit: previewSegments == null ? null : previewLimit,
+            commandCount: commands.length,
+            errorCount: errors.length,
+            segmentCount: segments.length,
+            stage: GcodeLoadStage.parsing,
+            commands: previewCommands ?? commands,
+            errors: previewErrors ?? errors,
+            segments: previewSegments ?? segments,
+            timeEstimate: estimator.snapshotWithIssueLimit(previewLimit),
+            linesRead: linesRead,
+            message: '已读取 $linesRead 行',
           );
         }
       }
 
-      final b = builder.bounds;
-      sendPort.send(
-        GcodeLoadSnapshot(
-          stage: GcodeLoadStage.ready,
-          commands: commands,
-          errors: errors,
-          segments: segments,
-          linesRead: linesRead,
-          message: '逐行读取完成: $linesRead 行, '
-              '${commands.length} 条指令, ${errors.length} 个错误, '
-              '${segments.length} 条轨迹段',
-          bounds: b.minX != 0 || b.maxX != 0 || b.minY != 0 || b.maxY != 0
-              ? b
-              : null,
-        ),
+      yield _snapshot(
+        bounds: builder.bounds,
+        stage: GcodeLoadStage.ready,
+        commands: commands,
+        errors: errors,
+        segments: segments,
+        timeEstimate: estimator.snapshot,
+        linesRead: linesRead,
+        message: '逐行读取完成: $linesRead 行, '
+            '${commands.length} 条指令, ${errors.length} 个错误, '
+            '${segments.length} 条轨迹段',
       );
     } catch (error) {
-      sendPort.send(
-        GcodeLoadSnapshot(
-          stage: GcodeLoadStage.failed,
-          commands: commands,
-          errors: errors,
-          segments: segments,
-          linesRead: linesRead,
-          message: '读取失败: $error',
-        ),
+      yield _snapshot(
+        bounds: builder.bounds,
+        stage: GcodeLoadStage.failed,
+        commands: commands,
+        errors: errors,
+        segments: segments,
+        timeEstimate: estimator.snapshot,
+        linesRead: linesRead,
+        message: '读取失败: $error',
       );
     }
-
-    sendPort.send(const _IsolateDone());
   }
+
+  /// Loads a native file through an isolated default pipeline.
+  ///
+  /// Invalid timing options produce [ArgumentError] before a worker starts.
+  /// Read errors produce failed snapshots. Unexpected worker failures produce
+  /// stream errors. Cancelling the subscription stops the worker.
+  Stream<GcodeLoadSnapshot> loadFileInBackground(String filePath) =>
+      _loadInBackground(filePath, true);
+
+  /// Loads text through an isolated default pipeline.
+  ///
+  /// Error and cancellation behavior matches [loadFileInBackground].
+  Stream<GcodeLoadSnapshot> loadStringInBackground(String source) =>
+      _loadInBackground(source, false);
+
+  Stream<GcodeLoadSnapshot> _loadInBackground(
+    String input,
+    bool isFile,
+  ) async* {
+    // Validate in the caller isolate so invalid options have the same error
+    // behavior as direct loads, before a worker is started.
+    GcodeTimeEstimator(options: options.timeOptions);
+    final receivePort = ReceivePort();
+    Isolate? worker;
+    try {
+      worker = await Isolate.spawn(
+        _isolateLoad,
+        (input, isFile, options, receivePort.sendPort),
+        onError: receivePort.sendPort,
+        onExit: receivePort.sendPort,
+      );
+      var hasTerminalSnapshot = false;
+      GcodeLoadSnapshot? frozenPreview;
+      SendPort? acknowledge;
+      await for (final message in receivePort) {
+        if (message is SendPort) {
+          acknowledge = message;
+          continue;
+        }
+        if (message is _IsolateDone) {
+          if (!hasTerminalSnapshot) {
+            throw StateError(
+              'Background load completed without a final snapshot',
+            );
+          }
+          break;
+        }
+        if (message is _IsolateFailure) {
+          throw RemoteError(message.error, message.stackTrace);
+        }
+        if (message == null) {
+          throw StateError('Background worker exited before load completion');
+        }
+        if (message is List && message.length == 2) {
+          // Uncaught isolate errors arrive as description/stack trace pairs.
+          throw RemoteError(message[0].toString(), message[1].toString());
+        }
+        final GcodeLoadSnapshot snapshot;
+        if (message is _FrozenPreviewUpdate && frozenPreview != null) {
+          snapshot = message.applyTo(frozenPreview);
+        } else if (message is GcodeLoadSnapshot) {
+          snapshot = message;
+          if (snapshot.previewLineLimit != null) frozenPreview = snapshot;
+        } else {
+          throw StateError('Unexpected background load message');
+        }
+        hasTerminalSnapshot = snapshot.stage == GcodeLoadStage.ready ||
+            snapshot.stage == GcodeLoadStage.failed;
+        yield snapshot;
+        acknowledge?.send(true);
+      }
+    } finally {
+      receivePort.close();
+      worker?.kill(priority: Isolate.immediate);
+    }
+  }
+
+  GcodeLoadSnapshot _snapshot({
+    required GcodeBounds bounds,
+    int? previewLineLimit,
+    int? commandCount,
+    int? errorCount,
+    int? segmentCount,
+    required GcodeLoadStage stage,
+    required List<GcodeCommand> commands,
+    required List<GcodeParseError> errors,
+    required List<ToolpathSegment> segments,
+    required GcodeTimeEstimate timeEstimate,
+    required int linesRead,
+    required String message,
+  }) {
+    return GcodeLoadSnapshot(
+      stage: stage,
+      commands:
+          previewLineLimit != null ? commands : List.unmodifiable(commands),
+      errors: previewLineLimit != null ? errors : List.unmodifiable(errors),
+      segments:
+          previewLineLimit != null ? segments : List.unmodifiable(segments),
+      previewLineLimit: previewLineLimit,
+      commandCount: commandCount,
+      errorCount: errorCount,
+      segmentCount: segmentCount,
+      timeEstimate: timeEstimate,
+      linesRead: linesRead,
+      message: message,
+      bounds: bounds.minX != 0 ||
+              bounds.maxX != 0 ||
+              bounds.minY != 0 ||
+              bounds.maxY != 0
+          ? bounds
+          : null,
+    );
+  }
+
+  static Future<void> _isolateLoad(
+    (String, bool, GcodeReadlineOptions, SendPort) args,
+  ) async {
+    final (input, isFile, options, sendPort) = args;
+    final acknowledgements = ReceivePort();
+    final iterator = StreamIterator(acknowledgements);
+    sendPort.send(acknowledgements.sendPort);
+    try {
+      final reader =
+          isFile ? FileGcodeLineReader(input) : StringGcodeLineReader(input);
+      var sentFrozenPreview = false;
+      // Reuse one pipeline so timing, bounds and immutable snapshots cannot
+      // diverge between direct, file-isolate and string-isolate loading.
+      await for (final snapshot in GcodeReadlinePipeline(
+        options: options,
+      ).load(reader)) {
+        if (snapshot.previewLineLimit != null && sentFrozenPreview) {
+          sendPort.send(_FrozenPreviewUpdate(snapshot));
+        } else {
+          sendPort.send(snapshot);
+          if (snapshot.previewLineLimit != null) sentFrozenPreview = true;
+        }
+        if (!await iterator.moveNext()) break;
+      }
+      sendPort.send(const _IsolateDone());
+    } catch (error, stackTrace) {
+      sendPort.send(_IsolateFailure(error.toString(), stackTrace.toString()));
+    } finally {
+      await iterator.cancel();
+      acknowledgements.close();
+    }
+  }
+}
+
+/// A frozen prefix is transferred once. Later batches carry only changing data.
+class _FrozenPreviewUpdate {
+  _FrozenPreviewUpdate(GcodeLoadSnapshot snapshot)
+      : linesRead = snapshot.linesRead,
+        message = snapshot.message,
+        commandCount = snapshot.commandCount,
+        errorCount = snapshot.errorCount,
+        segmentCount = snapshot.segmentCount,
+        timeEstimate = snapshot.timeEstimate;
+
+  final int linesRead;
+  final String message;
+  final int commandCount;
+  final int errorCount;
+  final int segmentCount;
+  final GcodeTimeEstimate? timeEstimate;
+
+  GcodeLoadSnapshot applyTo(GcodeLoadSnapshot preview) => GcodeLoadSnapshot(
+        stage: GcodeLoadStage.parsing,
+        commands: preview.commands,
+        errors: preview.errors,
+        segments: preview.segments,
+        bounds: preview.bounds,
+        linesRead: linesRead,
+        message: message,
+        diagnosticMessage: preview.diagnosticMessage,
+        previewLineLimit: preview.previewLineLimit,
+        commandCount: commandCount,
+        errorCount: errorCount,
+        segmentCount: segmentCount,
+        timeEstimate: timeEstimate,
+      );
 }
 
 class _IsolateDone {
   const _IsolateDone();
+}
+
+class _IsolateFailure {
+  const _IsolateFailure(this.error, this.stackTrace);
+
+  final String error;
+  final String stackTrace;
 }

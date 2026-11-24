@@ -13,6 +13,8 @@ package_root = root.parent
 spec = {name: {'type': kind, 'file': str(package_root / 'shaders' / file)}
         for name, kind, file in [('ToolpathVertex', 'vertex', 'toolpath.vert'),
                                  ('ToolpathFragment', 'fragment', 'toolpath.frag'),
+                                 ('BitmapVertex', 'vertex', 'bitmap.vert'),
+                                 ('BitmapFragment', 'fragment', 'bitmap.frag'),
                                  ('GuidesVertex', 'vertex', 'guides.vert'),
                                  ('GuidesFragment', 'fragment', 'guides.frag')]}
 subprocess.run([str(compilers[0]), '--runtime-stage-metal',

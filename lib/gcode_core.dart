@@ -10,12 +10,18 @@ export 'src/domain/gcode_line_record.dart';
 export 'src/domain/gcode_load_snapshot.dart';
 export 'src/domain/gcode_load_stage.dart';
 export 'src/domain/parsed_gcode_line.dart';
+export 'src/models/exposure_bitmap.dart';
+export 'src/models/machining_preview.dart';
 export 'src/models/gcode_command.dart';
 export 'src/models/machine_position.dart';
+export 'src/models/preview_timeline.dart';
 export 'src/models/toolpath_segment.dart';
 export 'src/parser/gcode_parse_result.dart';
 export 'src/parser/gcode_parser.dart';
 export 'src/services/toolpath_builder.dart';
+export 'gcode_time.dart';
 export 'src/widgets/command_timeline.dart';
 export 'src/widgets/gcode_canvas.dart';
 export 'src/widgets/playback_controls.dart';
+
+export 'src/rendering/gpu_toolpath_layer.dart' show GcodeRenderStats;

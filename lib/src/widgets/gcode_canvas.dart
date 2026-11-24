@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../core/gcode_bounds.dart';
 import '../core/gcode_style.dart';
+import '../models/exposure_bitmap.dart';
+import '../models/machining_preview.dart';
+import '../models/preview_timeline.dart';
 import '../models/toolpath_segment.dart';
 import '../rendering/gpu_toolpath_layer.dart';
 
@@ -14,7 +17,72 @@ class GcodeCanvas extends StatelessWidget {
       this.commandCount = 0,
       this.bounds,
       this.style,
-      this.showLegend = true});
+      this.showLegend = true,
+      this.onReady,
+      this.onError,
+      this.stats})
+      : bitmap = null,
+        scene = null,
+        timeline = null;
+
+  /// Shows a single processed exposure raster in machine coordinates.
+  const GcodeCanvas.bitmap({
+    super.key,
+    required ExposureBitmap image,
+    required this.progress,
+    this.style,
+    this.stats,
+    this.onReady,
+    this.onError,
+  })  : scene = null,
+        bitmap = image,
+        timeline = null,
+        segments = const [],
+        bounds = null,
+        commandCount = 0,
+        errorCount = 0,
+        showLegend = false;
+
+  /// Draws vector and raster operations in machining order on one surface.
+  const GcodeCanvas.mixed({
+    super.key,
+    required MachiningPreview preview,
+    required this.progress,
+    this.style,
+    this.stats,
+    this.onReady,
+    this.onError,
+  })  : scene = preview,
+        bitmap = null,
+        timeline = null,
+        segments = const [],
+        bounds = null,
+        commandCount = 0,
+        errorCount = 0,
+        showLegend = false;
+
+  /// Draws the scene with [progress] interpreted as elapsed preview time
+  /// divided by [PreviewTimeline.totalSeconds].
+  GcodeCanvas.timed({
+    super.key,
+    required PreviewTimeline timeline,
+    required this.progress,
+    this.style,
+    this.stats,
+    this.onReady,
+    this.onError,
+  })  : timeline = timeline,
+        scene = timeline.preview,
+        bitmap = null,
+        segments = const [],
+        bounds = null,
+        commandCount = 0,
+        errorCount = 0,
+        showLegend = false;
+
+  final PreviewTimeline? timeline;
+  final MachiningPreview? scene;
+  final ExposureBitmap? bitmap;
   final List<ToolpathSegment> segments;
   final double progress;
   final int errorCount;
@@ -22,6 +90,21 @@ class GcodeCanvas extends StatelessWidget {
   final GcodeBounds? bounds;
   final GcodeStyle? style;
   final bool showLegend;
+
+  /// Optional CPU submission counters, fixed for this canvas lifetime.
+  final GcodeRenderStats? stats;
+
+  /// The callback invoked after this mounted scene presents its first GPU frame.
+  ///
+  /// Called once per segment-list version, after frame composition. Empty scenes
+  /// and scenes too small to draw do not report readiness.
+  final VoidCallback? onReady;
+
+  /// The callback reporting GPU initialization or drawing failures.
+  ///
+  /// Initialization failures prevent [onReady]. Drawing may fail after the
+  /// first frame has been presented. Disposed scenes emit no events.
+  final ValueChanged<Object>? onError;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +114,9 @@ class GcodeCanvas extends StatelessWidget {
           color: Colors.grey.shade50,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: Colors.grey.shade300)),
-      child: segments.isEmpty
+      child: segments.isEmpty &&
+              bitmap == null &&
+              (scene?.operations.isEmpty ?? true)
           ? Center(
               child: Text(
                   commandCount == 0
@@ -41,12 +126,19 @@ class GcodeCanvas extends StatelessWidget {
           : ClipRect(
               child: Stack(fit: StackFit.expand, children: [
               GpuToolpathLayer(
-                  segments: segments,
-                  bounds: bounds,
+                  key: ObjectKey(scene ?? bitmap),
+                  bitmap: bitmap,
+                  scene: scene,
+                  timeline: timeline,
+                  segments: scene?.segments ?? segments,
+                  bounds: scene?.bounds ?? bitmap?.bounds ?? bounds,
                   progress: progress.isFinite
                       ? progress.clamp(0.0, 1.0).toDouble()
                       : 0.0,
-                  style: effectiveStyle),
+                  style: effectiveStyle,
+                  stats: stats,
+                  onReady: onReady,
+                  onError: onError),
               if (showLegend)
                 Positioned(
                     left: 8, bottom: 8, child: _Legend(style: effectiveStyle)),
